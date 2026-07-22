@@ -1,3 +1,5 @@
+![ISSEM Logo](ISSEM.png)
+
 # ISSEM FMS (Intralogistics System Smart Edge Manager)
 
 An open-source, vendor-agnostic Fleet Management System (FMS) built on **Eclipse Zenoh** and **VDA 5050 v3.0.0**. Designed to orchestrate heterogeneous fleets of Autonomous Mobile Robots (AMRs) and Automated Guided Vehicles (AGVs) in high-density warehouse and manufacturing environments.
