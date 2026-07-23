@@ -1,107 +1,88 @@
+mod fleet;
 mod vda5050;
 
-use std::error::Error;
-use tokio::time::{sleep, Duration};
-use vda5050::{Header, Node, NodePosition, Order, State};
+use fleet::FleetManager;
+use vda5050::State as VdaState;
+use std::env;
+use tracing::{error, info, warn};
+use zenoh::config::Config;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    println!("🚀 ISSEM FMS Core Initializing...");
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Initialize logging
+    tracing_subscriber::fmt::init();
 
-    // 1. Open Zenoh Session
-    println!("📡 Opening Zenoh session...");
-    let session = zenoh::open(zenoh::Config::default())
-        .await
-        .map_err(|e| format!("Failed to open Zenoh session: {e}"))?;
-    println!("✅ Zenoh session active!");
+    info!("Starting ISSEM FMS Core Engine...");
 
-    // 2. Subscribe to incoming State updates from ALL robots
-    // Wildcard '*' matches any manufacturer and serial number
-    let state_topic = "vda5050/v3/*/*/state";
-    let subscriber = session
-        .declare_subscriber(state_topic)
-        .await
-        .map_err(|e| format!("Failed to declare subscriber: {e}"))?;
+    // 1. Initialize Redis Connection Manager
+    let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+    info!("Connecting to Redis state store at: {redis_url}");
 
-    println!("📥 Subscribed to robot state topic: {}", state_topic);
-
-    // Spawn an asynchronous background task to process incoming robot messages
-    tokio::spawn(async move {
-        while let Ok(sample) = subscriber.recv_async().await {
-            // Safely attempt UTF-8 conversion using try_to_string()
-            if let Ok(payload_str) = sample.payload().try_to_string() {
-                match serde_json::from_str::<State>(&payload_str) {
-                    Ok(state) => {
-                        println!(
-                            "🤖 [ROBOT STATE] ID: {} | Battery: {:.1}% | Mode: {:?} | Driving: {}",
-                            state.header.serial_number,
-                            state.battery_state.battery_charge,
-                            state.operating_mode,
-                            state.driving
-                        );
-                    }
-                    Err(_) => {
-                        println!(
-                            "📩 [RAW MSG] Topic: {} | Payload: {}",
-                            sample.key_expr(),
-                            payload_str
-                        );
-                    }
-                }
-            }
+    let fleet_manager = match FleetManager::new(&redis_url).await {
+        Ok(fm) => {
+            info!("Successfully connected to Redis.");
+            fm
         }
-    });
-
-    // 3. Declare Publisher for outbound Orders
-    let order_topic = "vda5050/v3/ISSEM/AMR_01/order";
-    let publisher = session
-        .declare_publisher(order_topic)
-        .await
-        .map_err(|e| format!("Failed to declare publisher: {e}"))?;
-
-    println!("📤 Order publisher bound to topic: {}", order_topic);
-
-    // Give Zenoh discovery a moment to discover local peers
-    sleep(Duration::from_millis(500)).await;
-
-    // 4. Construct & publish a test VDA 5050 Order payload
-    let test_order = Order {
-        header: Header {
-            header_id: 1,
-            timestamp: "2026-07-22T13:00:00Z".to_string(),
-            version: "3.0.0".to_string(),
-            manufacturer: "ISSEM".to_string(),
-            serial_number: "AMR_01".to_string(),
-        },
-        order_id: "ORD_1001".to_string(),
-        order_update_id: 0,
-        zone_set_id: None,
-        nodes: vec![Node {
-            node_id: "Station_A".to_string(),
-            sequence_id: 0,
-            node_description: Some("Pickup station".to_string()),
-            released: true,
-            node_position: Some(NodePosition {
-                x: 10.5,
-                y: 5.2,
-                theta: Some(0.0),
-                map_id: "Warehouse_Floor_1".to_string(),
-                map_description: None,
-            }),
-            actions: vec![],
-        }],
-        edges: vec![],
+        Err(err) => {
+            error!("Failed to initialize Redis FleetManager: {err}");
+            return Err(err.into());
+        }
     };
 
-    let json_payload = serde_json::to_string(&test_order)?;
-    publisher.put(json_payload).await.map_err(|e| format!("Publish failed: {e}"))?;
+    // 2. Open Eclipse Zenoh Session
+    info!("Opening Zenoh network session...");
+    let zenoh_config = Config::default();
+    let session = zenoh::open(zenoh_config).await.map_err(|e| {
+        error!("Failed to open Zenoh session: {e}");
+        e
+    })?;
 
-    println!("✨ Published VDA 5050 Order to Zenoh topic [{}]", order_topic);
-    println!("⏳ Core running. Listening for robot states... (Press Ctrl+C to exit)");
+    // 3. Subscribe to VDA 5050 state topics: issem/v3/{manufacturer}/{serialNumber}/state
+    let topic_pattern = "issem/v3/*/*/state";
+    info!("Declaring Zenoh subscriber on topic pattern: '{topic_pattern}'");
 
-    // Keep event loop alive
-    tokio::signal::ctrl_c().await?;
-    println!("\n🛑 Shutting down ISSEM Core.");
+    let subscriber = session
+        .declare_subscriber(topic_pattern)
+        .await
+        .map_err(|e| {
+            error!("Failed to declare subscriber: {e}");
+            e
+        })?;
+
+    info!("ISSEM FMS Core active. Listening for telemetry...");
+
+    // 4. Telemetry Processing Event Loop
+    while let Ok(sample) = subscriber.recv_async().await {
+        let key_expr = sample.key_expr().to_string();
+
+        // Convert the borrowed slice into an owned Vec<u8> so it can cross the tokio::spawn boundary
+        let payload = sample.payload().to_bytes().to_vec();
+
+        // Extract {manufacturer} and {serialNumber} from "issem/v3/{mfr}/{sn}/state"
+        let parts: Vec<&str> = key_expr.split('/').collect();
+        if parts.len() != 5 {
+            warn!("Received message on invalid key expression format: {key_expr}");
+            continue;
+        }
+
+        let mfr = parts[2].to_string();
+        let sn = parts[3].to_string();
+        let fleet_mgr = fleet_manager.clone();
+
+        // Spawn non-blocking background task per update
+        tokio::spawn(async move {
+            match serde_json::from_slice::<VdaState>(&payload) {
+                Ok(vda_state) => {
+                    if let Err(err) = fleet_mgr.update_robot_state(&mfr, &sn, &vda_state).await {
+                        error!("Failed to persist telemetry to Redis for {mfr}:{sn}: {err}");
+                    }
+                }
+                Err(err) => {
+                    warn!("Failed to deserialize VDA 5050 JSON payload from {mfr}:{sn}: {err}");
+                }
+            }
+        });
+    }
 
     Ok(())
 }

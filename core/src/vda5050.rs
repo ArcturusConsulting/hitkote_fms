@@ -121,7 +121,9 @@ pub struct State {
     pub order_update_id: u32,
     pub last_node_id: String,
     pub last_node_sequence_id: u32,
+    #[serde(default)]
     pub node_states: Vec<NodeState>,
+    #[serde(default)]
     pub edge_states: Vec<EdgeState>,
     pub driving: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
