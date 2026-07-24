@@ -1,14 +1,18 @@
-use crate::vda5050::State as VdaState;
+use crate::router::TopologicalRouter;
+use crate::vda5050::{Order, State as VdaState};
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
-use serde_json;
 use std::fmt;
+use zenoh::Session;
 
 /// Custom error type for fleet management operations
 #[derive(Debug)]
 pub enum FleetError {
     Redis(redis::RedisError),
     Serialization(serde_json::Error),
+    Zenoh(zenoh::Error),
+    NoRouteFound(String),
+    PathOccupied(String),
 }
 
 impl fmt::Display for FleetError {
@@ -16,6 +20,9 @@ impl fmt::Display for FleetError {
         match self {
             FleetError::Redis(err) => write!(f, "Redis error: {err}"),
             FleetError::Serialization(err) => write!(f, "JSON serialization error: {err}"),
+            FleetError::Zenoh(err) => write!(f, "Zenoh transport error: {err}"),
+            FleetError::NoRouteFound(msg) => write!(f, "Pathfinding error: {msg}"),
+            FleetError::PathOccupied(msg) => write!(f, "Lock conflict: {msg}"),
         }
     }
 }
@@ -34,6 +41,12 @@ impl From<serde_json::Error> for FleetError {
     }
 }
 
+impl From<zenoh::Error> for FleetError {
+    fn from(err: zenoh::Error) -> Self {
+        FleetError::Zenoh(err)
+    }
+}
+
 /// Async Fleet Manager responsible for persisting telemetry snapshots,
 /// tracking robot heartbeats, and managing spatial lease locks.
 #[derive(Clone)]
@@ -47,6 +60,49 @@ impl FleetManager {
         let client = redis::Client::open(redis_url)?;
         let manager = ConnectionManager::new(client).await?;
         Ok(Self { redis: manager })
+    }
+
+    /// Calculates a route, atomically reserves spatial locks in Redis with a TTL,
+    /// converts the plan into a VDA 5050 Order, and dispatches it over Zenoh.
+    pub async fn dispatch_order(
+        &self,
+        zenoh: &Session,
+        router: &TopologicalRouter,
+        manufacturer: &str,
+        serial_number: &str,
+        start_node: &str,
+        target_node: &str,
+        order_id: &str,
+        lock_ttl_secs: u64,
+    ) -> Result<Order, FleetError> {
+        // 1. Calculate path
+        let plan = router.find_path(start_node, target_node).ok_or_else(|| {
+            FleetError::NoRouteFound(format!("No path found from '{start_node}' to '{target_node}'"))
+        })?;
+
+        // 2. Atomically reserve all nodes on the path using Lua script
+        let node_refs: Vec<&str> = plan.node_ids.iter().map(|s| s.as_str()).collect();
+        let acquired = self
+            .try_reserve_path(&node_refs, serial_number, lock_ttl_secs)
+            .await?;
+
+        if !acquired {
+            return Err(FleetError::PathOccupied(format!(
+                "Cannot dispatch order '{order_id}': one or more nodes on path are locked by another AMR"
+            )));
+        }
+
+        // 3. Convert RoutePlan into a valid VDA 5050 Order
+        let order = plan.into_vda5050_order(order_id, 0, manufacturer, serial_number);
+
+        // 4. Serialize and publish over Zenoh
+        let topic = format!("uagv/v2/{manufacturer}/{serial_number}/order");
+        let payload = serde_json::to_string(&order)?;
+
+        zenoh.put(&topic, payload).await?;
+        tracing::info!("🚀 Dispatched Order '{order_id}' to [{serial_number}] on '{topic}'");
+
+        Ok(order)
     }
 
     /// Stores the latest VDA 5050 state snapshot, refreshes the robot's liveness ping (5s TTL),
@@ -124,7 +180,6 @@ impl FleetManager {
         let lock_key = format!("issem:traffic:node:{node_id}");
         let mut conn = self.redis.clone();
 
-        // Performs: SET issem:traffic:node:{node_id} {robot_id} NX PX {ttl_ms}
         let result: Option<String> = redis::cmd("SET")
             .arg(&lock_key)
             .arg(robot_id)
@@ -142,8 +197,6 @@ impl FleetManager {
         let lock_key = format!("issem:traffic:node:{node_id}");
         let mut conn = self.redis.clone();
 
-        // Atomic evaluation using a simple inline Lua script to prevent accidental deletion
-        // if the lock expired and was re-acquired by another AMR.
         let script = redis::Script::new(
             r#"
             if redis.call("get", KEYS[1]) == ARGV[1] then
@@ -198,7 +251,6 @@ impl FleetManager {
             .map(|node_id| format!("issem:traffic:node:{node_id}"))
             .collect();
 
-        // Use self.redis (ConnectionManager)
         let mut conn = self.redis.clone();
         let result: i32 = lua_script
             .key(&keys)
@@ -211,7 +263,6 @@ impl FleetManager {
     }
 
     /// Atomically releases all nodes in a path owned by the specified robot.
-    /// Returns the number of locks actually released.
     pub async fn release_path(
         &self,
         nodes: &[&str],
@@ -248,5 +299,4 @@ impl FleetManager {
 
         Ok(released_count)
     }
-
 }

@@ -209,7 +209,7 @@ The Axum core runs both REST and WebSockets on port `8080`:
 - [x] Redis Durable State & Leased Spatial Lock Schema design
 - [ ] **Phase 1:** Core Zenoh router setup & C++ ROS 2 Nav2 bridge implementation
 - [x] **Phase 2:** Redis integration in `fleet.rs` (`redis-rs` async client)
-- [ ] **Phase 3:** Topological graph routing engine (`petgraph` + A* search)
+- [x] **Phase 3:** Topological graph routing engine (`petgraph` + A* search)
 - [x] **Phase 4:** Node & Zone reservation manager with atomic Lua scripts
 - [ ] **Phase 5:** Axum REST & WebSocket API layer with 2D Canvas web dashboard
 - [ ] **Phase 6:** Multi-robot Gazebo simulation integration test suite

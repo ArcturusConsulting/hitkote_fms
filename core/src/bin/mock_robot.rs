@@ -1,8 +1,8 @@
-use issem_core::fleet::fleet_manager::FleetManager; // Adjust path if re-exported differently in lib.rs
 use issem_core::vda5050::{BatteryState, Header, OperatingMode, State as VdaState};
+use serde_json::Value;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{info, Level};
+use tracing::{error, info, warn, Level};
 use tracing_subscriber::FmtSubscriber;
 use zenoh::config::Config;
 
@@ -13,86 +13,106 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
-    info!("Starting Mock AMR Publisher [ISSEM / AMR-01]...");
-
-    let mfr = "ISSEM";
+    let mfr = "Mir";
     let sn = "AMR-01";
-    let topic = format!("issem/v3/{mfr}/{sn}/state");
+    info!("Starting Mock AMR Listener/Publisher [{mfr}:{sn}]...");
 
-    // 1. Initialize FleetManager to manage Redis spatial locks
-    let redis_url = "redis://127.0.0.1:6379";
-    info!("Connecting to Redis at {redis_url}...");
-    let fleet_mgr = FleetManager::new(redis_url).await?;
-
-    // 2. Open Zenoh session
+    // 1. Open Zenoh session
     info!("Opening Zenoh session...");
     let session = zenoh::open(Config::default()).await.map_err(|e| {
-        tracing::error!("Failed to open Zenoh session: {e}");
+        error!("Failed to open Zenoh session: {e}");
         e
     })?;
 
-    info!("Declaring Zenoh publisher on topic: '{topic}'");
-    let publisher = session.declare_publisher(&topic).await.map_err(|e| {
-        tracing::error!("Failed to declare publisher: {e}");
+    // Topics following VDA 5050 / ISSEM conventions
+    let order_topic = format!("uagv/v2/{mfr}/{sn}/order");
+    let state_topic = format!("issem/v3/{mfr}/{sn}/state");
+
+    // 2. Subscribe to Orders sent by FMS Core (main.rs)
+    info!("Declaring Zenoh subscriber on order topic: '{order_topic}'");
+    let order_sub = session.declare_subscriber(&order_topic).await.map_err(|e| {
+        error!("Failed to declare subscriber: {e}");
         e
     })?;
+
+    // 3. Declare Publisher for State Telemetry
+    info!("Declaring Zenoh publisher on state topic: '{state_topic}'");
+    let publisher = session.declare_publisher(&state_topic).await.map_err(|e| {
+        error!("Failed to declare publisher: {e}");
+        e
+    })?;
+
+    info!("Mock Robot active. Waiting for order dispatches...");
 
     let mut sequence_id: u32 = 0;
 
-    // Defined waypoints for testing reactive lock releases
-    let route = vec!["station_alpha", "node_A1", "node_A2", "node_A3", "node_A4"];
-    let mut route_idx = 0;
+    // 4. Main loop: Wait for Order, then simulate driving
+    while let Ok(sample) = order_sub.recv_async().await {
+        let payload = sample.payload().to_bytes();
+        info!("📩 Received Order payload on {order_topic}");
 
-    loop {
-        // At the start of every lap, reserve all path nodes in Redis (60-second lease)
-        if route_idx == 0 {
-            info!("🔒 [LAP START] Pre-reserving path in Redis: {:?}", route);
-            match fleet_mgr.try_reserve_path(&route, sn, 60).await {
-                Ok(true) => info!("✅ Path reserved successfully in Redis for {sn}"),
-                Ok(false) => tracing::warn!("⚠️ Could not reserve path (one or more nodes locked)"),
-                Err(e) => tracing::error!("❌ Error reserving path: {e}"),
+        if let Ok(order_json) = serde_json::from_slice::<Value>(&payload) {
+            let order_id = order_json
+                .get("orderId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("ORD-UNKNOWN");
+
+            if let Some(nodes) = order_json.get("nodes").and_then(|n| n.as_array()) {
+                info!("Executing Order '{order_id}' across {} nodes...", nodes.len());
+
+                for (idx, node) in nodes.iter().enumerate() {
+                    let node_id = node
+                        .get("nodeId")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("unknown_node");
+
+                    info!("🚗 Driving to '{node_id}'...");
+                    sleep(Duration::from_secs(3)).await;
+
+                    sequence_id += 1;
+
+                    // Build canonical VDA 5050 State struct matching your crate
+                    let state_payload = VdaState {
+                        header: Header {
+                            header_id: sequence_id,
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                            version: "3.0.0".to_string(),
+                            manufacturer: mfr.to_string(),
+                            serial_number: sn.to_string(),
+                        },
+                        order_id: order_id.to_string(),
+                        order_update_id: 1,
+                        last_node_id: node_id.to_string(),
+                        last_node_sequence_id: (idx * 2) as u32,
+                        node_states: vec![],
+                        edge_states: vec![],
+                        driving: true,
+                        paused: Some(false),
+                        battery_state: BatteryState {
+                            battery_charge: 95.0,
+                            charging: false,
+                            battery_voltage: None,
+                        },
+                        operating_mode: OperatingMode::Automatic,
+                        action_states: vec![],
+                        errors: vec![],
+                    };
+
+                    let json_bytes = serde_json::to_vec(&state_payload)?;
+                    publisher.put(json_bytes).await.map_err(|e| {
+                        error!("Failed to publish state update: {e}");
+                        e
+                    })?;
+
+                    info!("📍 Arrived at '{node_id}'. Telemetry published (seq={sequence_id}).");
+                }
+
+                info!("✅ Order '{order_id}' execution complete!");
             }
+        } else {
+            warn!("⚠️ Failed to parse incoming Order JSON payload.");
         }
-
-        sequence_id += 1;
-        let current_node = route[route_idx];
-
-        // Construct canonical VDA 5050 State struct
-        let payload = VdaState {
-            header: Header {
-                header_id: sequence_id,
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                version: "3.0.0".to_string(),
-                manufacturer: mfr.to_string(),
-                serial_number: sn.to_string(),
-            },
-            order_id: "ORD-2026-101".to_string(),
-            order_update_id: 1,
-            last_node_id: current_node.to_string(),
-            last_node_sequence_id: (route_idx * 2) as u32,
-            node_states: vec![],
-            edge_states: vec![],
-            driving: true,
-            paused: Some(false),
-            battery_state: BatteryState {
-                battery_charge: 92.4,
-                charging: false,
-                battery_voltage: None,
-            },
-            operating_mode: OperatingMode::Automatic,
-            action_states: vec![],
-            errors: vec![],
-        };
-
-        let json_bytes = serde_json::to_vec(&payload)?;
-        publisher.put(json_bytes).await.map_err(|e| {
-            tracing::error!("Failed to publish VDA 5050 payload: {e}");
-            e
-        })?;
-
-        info!("Published telemetry frame seq={sequence_id}, node='{current_node}' to '{topic}'");
-
-        route_idx = (route_idx + 1) % route.len();
-        sleep(Duration::from_secs(3)).await;
     }
+
+    Ok(())
 }
