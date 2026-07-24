@@ -1,50 +1,10 @@
-use serde::Serialize;
+use issem_core::fleet::fleet_manager::FleetManager; // Adjust path if re-exported differently in lib.rs
+use issem_core::vda5050::{BatteryState, Header, OperatingMode, State as VdaState};
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
 use zenoh::config::Config;
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Header {
-    header_id: u32,
-    timestamp: String,
-    version: String,
-    manufacturer: String,
-    serial_number: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct BatteryState {
-    battery_charge: f64,
-    charging: bool,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SafetyState {
-    e_stop: bool,
-    field_violation: bool,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct VdaStatePayload {
-    header: Header,
-    order_id: String,
-    order_update_id: u32,
-    last_node_id: String,
-    last_node_sequence_id: u32,
-    driving: bool,
-    operating_mode: String,
-    battery_state: BatteryState,
-    safety_state: SafetyState,
-    node_states: Vec<serde_json::Value>,
-    edge_states: Vec<serde_json::Value>,
-    action_states: Vec<serde_json::Value>,
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -59,6 +19,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let sn = "AMR-01";
     let topic = format!("issem/v3/{mfr}/{sn}/state");
 
+    // 1. Initialize FleetManager to manage Redis spatial locks
+    let redis_url = "redis://127.0.0.1:6379";
+    info!("Connecting to Redis at {redis_url}...");
+    let fleet_mgr = FleetManager::new(redis_url).await?;
+
+    // 2. Open Zenoh session
     info!("Opening Zenoh session...");
     let session = zenoh::open(Config::default()).await.map_err(|e| {
         tracing::error!("Failed to open Zenoh session: {e}");
@@ -73,10 +39,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let mut sequence_id: u32 = 0;
 
-    loop {
-        sequence_id += 1;
+    // Defined waypoints for testing reactive lock releases
+    let route = vec!["station_alpha", "node_A1", "node_A2", "node_A3", "node_A4"];
+    let mut route_idx = 0;
 
-        let payload = VdaStatePayload {
+    loop {
+        // At the start of every lap, reserve all path nodes in Redis (60-second lease)
+        if route_idx == 0 {
+            info!("🔒 [LAP START] Pre-reserving path in Redis: {:?}", route);
+            match fleet_mgr.try_reserve_path(&route, sn, 60).await {
+                Ok(true) => info!("✅ Path reserved successfully in Redis for {sn}"),
+                Ok(false) => tracing::warn!("⚠️ Could not reserve path (one or more nodes locked)"),
+                Err(e) => tracing::error!("❌ Error reserving path: {e}"),
+            }
+        }
+
+        sequence_id += 1;
+        let current_node = route[route_idx];
+
+        // Construct canonical VDA 5050 State struct
+        let payload = VdaState {
             header: Header {
                 header_id: sequence_id,
                 timestamp: chrono::Utc::now().to_rfc3339(),
@@ -86,21 +68,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             },
             order_id: "ORD-2026-101".to_string(),
             order_update_id: 1,
-            last_node_id: "station_alpha".to_string(),
-            last_node_sequence_id: 2,
+            last_node_id: current_node.to_string(),
+            last_node_sequence_id: (route_idx * 2) as u32,
+            node_states: vec![],
+            edge_states: vec![],
             driving: true,
-            operating_mode: "AUTOMATIC".to_string(),
+            paused: Some(false),
             battery_state: BatteryState {
                 battery_charge: 92.4,
                 charging: false,
+                battery_voltage: None,
             },
-            safety_state: SafetyState {
-                e_stop: false,
-                field_violation: false,
-            },
-            node_states: vec![],
-            edge_states: vec![],
+            operating_mode: OperatingMode::Automatic,
             action_states: vec![],
+            errors: vec![],
         };
 
         let json_bytes = serde_json::to_vec(&payload)?;
@@ -109,8 +90,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             e
         })?;
 
-        info!("Published telemetry frame seq={sequence_id} to '{topic}'");
+        info!("Published telemetry frame seq={sequence_id}, node='{current_node}' to '{topic}'");
 
-        sleep(Duration::from_secs(1)).await;
+        route_idx = (route_idx + 1) % route.len();
+        sleep(Duration::from_secs(3)).await;
     }
 }

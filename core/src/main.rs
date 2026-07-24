@@ -29,6 +29,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     };
 
+    let fleet_test = fleet_manager.clone();
+    tokio::spawn(async move {
+        let path = vec!["node_A1", "node_A2", "node_A3"];
+        let robot_1 = "AMR-01";
+        let robot_2 = "AMR-02";
+
+        tracing::info!("--- ATOMIC PATH RESERVATION & RELEASE TEST ---");
+
+        // 1. AMR-01 reserves [A1, A2, A3]
+        let path_1_ok = fleet_test
+            .try_reserve_path(&path, robot_1, 15)
+            .await
+            .unwrap_or(false);
+
+        if path_1_ok {
+            tracing::info!("SUCCESS: [{}] reserved path {:?}", robot_1, path);
+        }
+
+        // 2. AMR-02 tries to steal path (blocked)
+        let path_2_ok = fleet_test
+            .try_reserve_path(&path, robot_2, 15)
+            .await
+            .unwrap_or(false);
+
+        if !path_2_ok {
+            tracing::info!("SUCCESS (Blocked): [{}] blocked from path reserved by {}", robot_2, robot_1);
+        }
+
+        // 3. AMR-01 releases the path
+        let released = fleet_test
+            .release_path(&path, robot_1)
+            .await
+            .unwrap_or(0);
+
+        tracing::info!("SUCCESS: [{}] released {} node locks", robot_1, released);
+
+        // 4. AMR-02 can now reserve the path
+        let path_2_retry = fleet_test
+            .try_reserve_path(&path, robot_2, 15)
+            .await
+            .unwrap_or(false);
+
+        if path_2_retry {
+            tracing::info!("SUCCESS: [{}] successfully acquired path after release!", robot_2);
+        }
+
+        // Cleanup
+        let _ = fleet_test.release_path(&path, robot_2).await;
+        tracing::info!("--- TEST COMPLETE ---");
+    });
+
     // 2. Open Eclipse Zenoh Session
     info!("Opening Zenoh network session...");
     let zenoh_config = Config::default();
@@ -54,14 +105,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 4. Telemetry Processing Event Loop
     while let Ok(sample) = subscriber.recv_async().await {
         let key_expr = sample.key_expr().to_string();
+        
+        // 🚨 ADDED: Prove Zenoh is receiving the message over the network
+        info!("📩 [ZENOH] Received raw message on topic: {key_expr}");
 
-        // Convert the borrowed slice into an owned Vec<u8> so it can cross the tokio::spawn boundary
         let payload = sample.payload().to_bytes().to_vec();
 
-        // Extract {manufacturer} and {serialNumber} from "issem/v3/{mfr}/{sn}/state"
         let parts: Vec<&str> = key_expr.split('/').collect();
         if parts.len() != 5 {
-            warn!("Received message on invalid key expression format: {key_expr}");
+            warn!("⚠️ Received message on invalid key expression format: {key_expr}");
             continue;
         }
 
@@ -69,16 +121,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let sn = parts[3].to_string();
         let fleet_mgr = fleet_manager.clone();
 
-        // Spawn non-blocking background task per update
         tokio::spawn(async move {
             match serde_json::from_slice::<VdaState>(&payload) {
                 Ok(vda_state) => {
+                    // 🚨 ADDED: Prove Serde parsed the VDA struct successfully
+                    info!("✅ [DESERIALIZATION] Parsed state for {mfr}:{sn} (Current Node: '{}')", vda_state.last_node_id);
+                    
                     if let Err(err) = fleet_mgr.update_robot_state(&mfr, &sn, &vda_state).await {
-                        error!("Failed to persist telemetry to Redis for {mfr}:{sn}: {err}");
+                        error!("❌ Failed to persist telemetry to Redis for {mfr}:{sn}: {err}");
                     }
                 }
                 Err(err) => {
-                    warn!("Failed to deserialize VDA 5050 JSON payload from {mfr}:{sn}: {err}");
+                    warn!("⚠️ [DESERIALIZATION ERROR] Failed to parse payload from {mfr}:{sn}: {err}");
+                    
+                    // String::from_utf8_lossy takes &[u8] by reference and never panics or returns Err
+                    let raw_json = String::from_utf8_lossy(&payload);
+                    warn!("Raw JSON was: {raw_json}");
                 }
             }
         });
