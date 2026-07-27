@@ -1,10 +1,13 @@
 use std::env;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 use zenoh::config::Config;
 
+// Import from your library crate
+use issem_core::api::{self, AppState};
 use issem_core::fleet::FleetManager;
-use issem_core::router::{MapEdge, MapNode, TopologicalRouter};
+use issem_core::router::TopologicalRouter;
 use issem_core::vda5050::State as VdaState;
 
 #[tokio::main]
@@ -29,40 +32,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     };
 
-// 2. Build the Topological Map Graph
+    // 2. Build the Topological Map Graph
     let mut router = TopologicalRouter::new();
 
-    // Pass (id, x, y) as floats directly:
     router.add_node("node_A1", 0.0, 0.0);
     router.add_node("node_A2", 5.0, 0.0);
     router.add_node("node_A3", 10.0, 0.0);
 
-    // Pass (edge_id, from_id, to_id, distance_m) directly:
     router.add_edge("edge_A1_A2", "node_A1", "node_A2", 5.0).unwrap();
     router.add_edge("edge_A2_A3", "node_A2", "node_A3", 5.0).unwrap();
 
-    // Wrap router in Arc so it can be shared safely across tasks if needed
     let router = Arc::new(router);
     info!("Topological route graph initialized.");
 
-    // 3. Open Eclipse Zenoh Session
+    // 3. Open Eclipse Zenoh Session (wrapped in Arc for multi-task sharing)
     info!("Opening Zenoh network session...");
     let zenoh_config = Config::default();
-    let session = zenoh::open(zenoh_config).await.map_err(|e| {
-        error!("Failed to open Zenoh session: {e}");
-        e
-    })?;
+    let zenoh_session = Arc::new(
+        zenoh::open(zenoh_config)
+            .await
+            .map_err(|e| {
+                error!("Failed to open Zenoh session: {e}");
+                e
+            })?
+    );
 
-    // 4. Test Dispatch an Order (Optional startup dispatch)
-    let fm_dispatch = fleet_manager.clone();
-    let router_dispatch = router.clone();
-    let session_ref = &session;
-
+    // 4. (Optional) Initial Test Dispatch
     info!("Triggering initial test order dispatch...");
-    match fm_dispatch
+    match fleet_manager
         .dispatch_order(
-            session_ref,
-            &router_dispatch,
+            &zenoh_session,
+            &router,
             "Mir",
             "AMR-01",
             "node_A1",
@@ -80,15 +80,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             );
         }
         Err(err) => {
-            error!("Failed to dispatch order: {err}");
+            warn!("Initial test order dispatch skipped or failed: {err}");
         }
     }
 
-    // 5. Subscribe to VDA 5050 state topics: issem/v3/{manufacturer}/{serialNumber}/state
+    // 5. Declare Zenoh Subscriber for VDA 5050 state topics
     let topic_pattern = "issem/v3/*/*/state";
     info!("Declaring Zenoh subscriber on topic pattern: '{topic_pattern}'");
 
-    let subscriber = session
+    let subscriber = zenoh_session
         .declare_subscriber(topic_pattern)
         .await
         .map_err(|e| {
@@ -96,45 +96,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             e
         })?;
 
-    info!("ISSEM FMS Core active. Listening for telemetry...");
+    // 6. Spawn Telemetry Listener in a Background Task
+    let fleet_mgr_telemetry = fleet_manager.clone();
+    tokio::spawn(async move {
+        info!("ISSEM FMS Core active. Telemetry listener thread started.");
 
-    // 6. Telemetry Processing Event Loop
-    while let Ok(sample) = subscriber.recv_async().await {
-        let key_expr = sample.key_expr().to_string();
-        info!("📩 [ZENOH] Received raw message on topic: {key_expr}");
+        while let Ok(sample) = subscriber.recv_async().await {
+            let key_expr = sample.key_expr().to_string();
+            info!("📩 [ZENOH] Received raw message on topic: {key_expr}");
 
-        let payload = sample.payload().to_bytes().to_vec();
+            let payload = sample.payload().to_bytes().to_vec();
 
-        let parts: Vec<&str> = key_expr.split('/').collect();
-        if parts.len() != 5 {
-            warn!("⚠️ Received message on invalid key expression format: {key_expr}");
-            continue;
-        }
+            let parts: Vec<&str> = key_expr.split('/').collect();
+            if parts.len() != 5 {
+                warn!("⚠️ Received message on invalid key expression format: {key_expr}");
+                continue;
+            }
 
-        let mfr = parts[2].to_string();
-        let sn = parts[3].to_string();
-        let fleet_mgr = fleet_manager.clone();
+            let mfr = parts[2].to_string();
+            let sn = parts[3].to_string();
+            let fm = fleet_mgr_telemetry.clone();
 
-        tokio::spawn(async move {
-            match serde_json::from_slice::<VdaState>(&payload) {
-                Ok(vda_state) => {
-                    info!(
-                        "✅ [DESERIALIZATION] Parsed state for {mfr}:{sn} (Current Node: '{}')",
-                        vda_state.last_node_id
-                    );
+            tokio::spawn(async move {
+                match serde_json::from_slice::<VdaState>(&payload) {
+                    Ok(vda_state) => {
+                        info!(
+                            "✅ [DESERIALIZATION] Parsed state for {mfr}:{sn} (Current Node: '{}')",
+                            vda_state.last_node_id
+                        );
 
-                    if let Err(err) = fleet_mgr.update_robot_state(&mfr, &sn, &vda_state).await {
-                        error!("❌ Failed to persist telemetry to Redis for {mfr}:{sn}: {err}");
+                        if let Err(err) = fm.update_robot_state(&mfr, &sn, &vda_state).await {
+                            error!("❌ Failed to persist telemetry to Redis for {mfr}:{sn}: {err}");
+                        }
+                    }
+                    Err(err) => {
+                        warn!("⚠️ [DESERIALIZATION ERROR] Failed to parse payload from {mfr}:{sn}: {err}");
+                        let raw_json = String::from_utf8_lossy(&payload);
+                        warn!("Raw JSON was: {raw_json}");
                     }
                 }
-                Err(err) => {
-                    warn!("⚠️ [DESERIALIZATION ERROR] Failed to parse payload from {mfr}:{sn}: {err}");
-                    let raw_json = String::from_utf8_lossy(&payload);
-                    warn!("Raw JSON was: {raw_json}");
-                }
-            }
-        });
-    }
+            });
+        }
+    });
+
+    // 7. Setup & Run Axum REST API Server (Main Thread)
+    let shared_state = AppState {
+        router,
+        fleet_manager,
+        zenoh_session: zenoh_session.clone(),
+    };
+
+    let app = axum::Router::new()
+        .route("/api/v1/robots/{robot_id}/orders", axum::routing::post(api::dispatch_order_handler))
+        .route("/api/v1/tasks", axum::routing::post(api::create_transport_task_handler))
+        .with_state(shared_state);
+
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    info!("🚀 ISSEM Core API server listening on http://{addr}");
+
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }

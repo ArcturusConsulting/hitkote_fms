@@ -55,6 +55,10 @@ pub struct FleetManager {
 }
 
 impl FleetManager {
+    pub fn get_redis_conn(&self) -> redis::aio::ConnectionManager {
+            self.redis.clone()
+        }
+
     /// Connects to Redis and establishes a resilient async connection manager.
     pub async fn new(redis_url: &str) -> Result<Self, FleetError> {
         let client = redis::Client::open(redis_url)?;

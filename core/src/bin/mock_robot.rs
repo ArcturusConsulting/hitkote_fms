@@ -43,6 +43,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     })?;
 
     info!("Mock Robot active. Waiting for order dispatches...");
+    info!("Broadcasting initial startup telemetry for {sn} at 'node_A1'...");
+    let initial_state = VdaState {
+        header: Header {
+            header_id: 0,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            version: "3.0.0".to_string(),
+            manufacturer: mfr.to_string(),
+            serial_number: sn.to_string(),
+        },
+        order_id: "".to_string(),
+        order_update_id: 0,
+        last_node_id: "node_A1".to_string(), // Initial starting position
+        last_node_sequence_id: 0,
+        node_states: vec![],
+        edge_states: vec![],
+        driving: false,
+        paused: Some(false),
+        battery_state: BatteryState {
+            battery_charge: 100.0,
+            charging: false,
+            battery_voltage: None,
+        },
+        operating_mode: OperatingMode::Automatic,
+        action_states: vec![],
+        errors: vec![],
+    };
+
+    publisher.put(serde_json::to_vec(&initial_state)?).await?;
+    info!("Mock Robot active and registered as IDLE at node_A1. Waiting for orders...");
 
     let mut sequence_id: u32 = 0;
 
