@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISSEM FMS — Live Fleet Dashboard</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+    <header>
+        <h1>ISSEM CORE // FLEET TELEMETRY</h1>
+        <div class="status-badge">
+            <span id="status-indicator" class="indicator"></span>
+            <span id="status-text">Disconnected</span>
+        </div>
+    </header>
+
+    <main>
+        <!-- 2D Map Canvas -->
+        <div class="canvas-container">
+            <canvas id="mapCanvas" width="800" height="500"></canvas>
+        </div>
+
+        <!-- Right Side Telemetry Feed -->
+        <div class="sidebar">
+            <div class="panel-title">Active Robot State</div>
+            
+            <div class="card">
+                <div class="card-label">Last Reported Node</div>
+                <div id="robot-node" class="card-value">--</div>
+            </div>
+
+            <div class="card">
+                <div class="card-label">Sequence ID</div>
+                <div id="robot-seq" class="card-value">--</div>
+            </div>
+
+            <div class="panel-title">Raw Telemetry Stream</div>
+            <pre id="telemetry-log">Waiting for incoming Zenoh messages...</pre>
+        </div>
+    </main>
+
+    <!-- Entry point module -->
+    <script type="module" src="/js/app.js"></script>
+</body>
+</html>

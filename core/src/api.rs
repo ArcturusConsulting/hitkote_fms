@@ -8,8 +8,8 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::fleet::{FleetError, FleetManager, AllocationResult, TaskAllocator, TransportTaskRequest};
-use crate::router::{RoutePlan, TopologicalRouter};
+use crate::fleet::{FleetError, FleetManager, TaskAllocator, TransportTaskRequest};
+use crate::router::TopologicalRouter;
 
 /// Shared application state injected into Axum route handlers.
 #[derive(Clone)]
@@ -17,6 +17,7 @@ pub struct AppState {
     pub router: Arc<TopologicalRouter>,
     pub fleet_manager: FleetManager,
     pub zenoh_session: Arc<zenoh::Session>,
+    pub tx: tokio::sync::broadcast::Sender<String>,
 }
 
 /// Incoming JSON payload for order dispatching.

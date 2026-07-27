@@ -1,5 +1,5 @@
 use crate::fleet::fleet_manager::FleetManager;
-use crate::router::{RoutePlan, TopologicalRouter};
+use crate::router::TopologicalRouter;
 use crate::vda5050::State as VdaState;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};

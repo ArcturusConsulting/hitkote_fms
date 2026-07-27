@@ -1,6 +1,8 @@
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::sync::broadcast; // 🆕 NEW: Added for live WebSocket broadcasting
+use tower_http::services::ServeDir; // 🆕 NEW: Added for serving frontend HTML/JS
 use tracing::{error, info, warn};
 use zenoh::config::Config;
 
@@ -9,6 +11,7 @@ use issem_core::api::{self, AppState};
 use issem_core::fleet::FleetManager;
 use issem_core::router::TopologicalRouter;
 use issem_core::vda5050::State as VdaState;
+use issem_core::ws::ws_handler; // 🆕 NEW: Import your WebSocket handler
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -16,6 +19,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
 
     info!("Starting ISSEM FMS Core Engine...");
+
+    // 🆕 NEW: Create the broadcast channel for real-time telemetry (100 message buffer)
+    let (tx, _rx) = broadcast::channel::<String>(100);
 
     // 1. Initialize Redis Connection Manager
     let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
@@ -98,6 +104,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // 6. Spawn Telemetry Listener in a Background Task
     let fleet_mgr_telemetry = fleet_manager.clone();
+    let tx_telemetry = tx.clone(); // 🆕 NEW: Clone channel sender for the background task
+
     tokio::spawn(async move {
         info!("ISSEM FMS Core active. Telemetry listener thread started.");
 
@@ -116,8 +124,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let mfr = parts[2].to_string();
             let sn = parts[3].to_string();
             let fm = fleet_mgr_telemetry.clone();
+            let tx_inner = tx_telemetry.clone(); // 🆕 NEW: Pass sender to inner task
 
             tokio::spawn(async move {
+                let raw_json = String::from_utf8_lossy(&payload).to_string();
+                let _ = tx_inner.send(raw_json.clone());
+
+                // 🆕 NEW: Instantly forward the raw JSON telemetry over WebSockets to UI clients!
+
                 match serde_json::from_slice::<VdaState>(&payload) {
                     Ok(vda_state) => {
                         info!(
@@ -131,7 +145,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     }
                     Err(err) => {
                         warn!("⚠️ [DESERIALIZATION ERROR] Failed to parse payload from {mfr}:{sn}: {err}");
-                        let raw_json = String::from_utf8_lossy(&payload);
                         warn!("Raw JSON was: {raw_json}");
                     }
                 }
@@ -144,11 +157,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         router,
         fleet_manager,
         zenoh_session: zenoh_session.clone(),
+        tx: tx.clone(),
     };
 
     let app = axum::Router::new()
         .route("/api/v1/robots/{robot_id}/orders", axum::routing::post(api::dispatch_order_handler))
         .route("/api/v1/tasks", axum::routing::post(api::create_transport_task_handler))
+        .route("/api/v1/ws", axum::routing::get(ws_handler))
+        .fallback_service(ServeDir::new("static")) // 👈 Change .nest_service("/", ...) to .fallback_service(...)
         .with_state(shared_state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
