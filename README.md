@@ -202,15 +202,26 @@ The Axum core runs both REST and WebSockets on port `8080`:
 
 5. **Test the ROS2 Adapter:**
    ```bash
-   ros2 run issem_ros2_bridge bridge_node --ros-args -p agv_id:=amr_01 -p zenoh_locator:="tcp/127.0.0.1:7447"
+   ros2 run issem_ros2_bridge bridge_node --ros-args -p agv_id:=amr_01 -p use_sim_time:=true
    ```
-   **Monitor the telemetry:**
+
+6. **Run Turtlebot4 Simulation:**
+   If turtlebot4 simulator is not installed already, run
    ```bash
-   uv run --with eclipse-zenoh test/monitor_state.py
+   sudo apt update
+   sudo apt install ros-[your_version]-turtlebot4-simulator
+   ```
+   **Launch Gazebo Simulation:**
+   ```bash
+   ros2 launch sim/launch.py
    ```
    **Send an order:**
    ```bash
    uv run --with eclipse-zenoh test/send_order.py
+   ```
+   **Monitor the telemetry:**
+   ```bash
+   uv run --with eclipse-zenoh test/monitor_state.py
    ```
 ---
 
