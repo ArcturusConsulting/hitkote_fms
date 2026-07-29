@@ -200,6 +200,18 @@ The Axum core runs both REST and WebSockets on port `8080`:
      }'
    ```
 
+5. **Test the ROS2 Adapter:**
+   ```bash
+   ros2 run issem_ros2_bridge bridge_node --ros-args -p agv_id:=amr_01 -p zenoh_locator:="tcp/127.0.0.1:7447"
+   ```
+   **Monitor the telemetry:**
+   ```bash
+   uv run --with eclipse-zenoh test/monitor_state.py
+   ```
+   **Send an order:**
+   ```bash
+   uv run --with eclipse-zenoh test/send_order.py
+   ```
 ---
 
 ## 🗺️ Development Roadmap
@@ -207,7 +219,7 @@ The Axum core runs both REST and WebSockets on port `8080`:
 - [x] Architecture design & VDA 5050 v3.0.0 schema definitions
 - [x] Docker Compose environment setup (Redis 7 + Core Container)
 - [x] Redis Durable State & Leased Spatial Lock Schema design
-- [ ] **Phase 1:** Core Zenoh router setup & C++ ROS 2 Nav2 bridge implementation
+- [x] **Phase 1:** Core Zenoh router setup & C++ ROS 2 Nav2 bridge implementation
 - [x] **Phase 2:** Redis integration in `fleet.rs` (`redis-rs` async client)
 - [x] **Phase 3:** Topological graph routing engine (`petgraph` + A* search)
 - [x] **Phase 4:** Node & Zone reservation manager with atomic Lua scripts
