@@ -1,33 +1,45 @@
-use std::env;
+use std::fs;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::broadcast; // 🆕 NEW: Added for live WebSocket broadcasting
-use tower_http::services::ServeDir; // 🆕 NEW: Added for serving frontend HTML/JS
+use serde::Deserialize;
+use std::collections::HashMap;
+use tokio::sync::broadcast;
+use tower_http::services::ServeDir;
 use tracing::{error, info, warn};
 use zenoh::config::Config;
 
-// Import from your library crate
 use issem_core::api::{self, AppState};
+use issem_core::config::AppConfig;
 use issem_core::fleet::FleetManager;
 use issem_core::router::TopologicalRouter;
 use issem_core::vda5050::State as VdaState;
-use issem_core::ws::ws_handler; // 🆕 NEW: Import your WebSocket handler
+use issem_core::ws::ws_handler;
+
+#[derive(Deserialize)]
+struct NodePos {
+    x: f64,
+    y: f64,
+}
+
+#[derive(Deserialize)]
+struct GraphConfig {
+    nodes: HashMap<String, NodePos>,
+    edges: Vec<(String, String, f64)>, // [from, to, distance]
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Initialize logging
     tracing_subscriber::fmt::init();
-
     info!("Starting ISSEM FMS Core Engine...");
 
-    // 🆕 NEW: Create the broadcast channel for real-time telemetry (100 message buffer)
+    // 1. Load centralized configuration from config/default.json or env vars
+    let config = AppConfig::load()?;
+
     let (tx, _rx) = broadcast::channel::<String>(100);
 
-    // 1. Initialize Redis Connection Manager
-    let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
-    info!("Connecting to Redis state store at: {redis_url}");
-
-    let fleet_manager = match FleetManager::new(&redis_url).await {
+    info!("Connecting to Redis state store at: {}", config.redis.url);
+    let fleet_manager = match FleetManager::new(&config.redis.url).await {
         Ok(fm) => {
             info!("Successfully connected to Redis.");
             fm
@@ -38,22 +50,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     };
 
-    // 2. Build the Topological Map Graph
+    // 2. Initialize and build the Topological Map Graph dynamically from graph.json
     let mut router = TopologicalRouter::new();
+    let graph_path = &config.paths.graph_file;
 
-    router.add_node("node_A1", 0.0, 0.0);
-    router.add_node("node_A2", 5.0, 0.0);
-    router.add_node("node_A3", 10.0, 0.0);
+    match fs::read_to_string(graph_path) {
+        Ok(content) => {
+            let graph: GraphConfig = serde_json::from_str(&content)?;
+            
+            for (node_id, pos) in &graph.nodes {
+                router.add_node(node_id, pos.x, pos.y);
+            }
 
-    router.add_edge("edge_A1_A2", "node_A1", "node_A2", 5.0).unwrap();
-    router.add_edge("edge_A2_A3", "node_A2", "node_A3", 5.0).unwrap();
+            for (from, to, dist) in &graph.edges {
+                let edge_id = format!("edge_{}_{}", from, to);
+                if let Err(e) = router.add_edge(&edge_id, from, to, *dist) {
+                    warn!("Failed to add edge {edge_id}: {e}");
+                }
+            }
+            info!("Loaded {} nodes and {} edges from {}", graph.nodes.len(), graph.edges.len(), graph_path);
+        }
+        Err(e) => {
+            warn!("Could not read {graph_path}: {e}. Initializing empty router.");
+        }
+    }
 
     let router = Arc::new(router);
-    info!("Topological route graph initialized.");
 
-    // 3. Open Eclipse Zenoh Session (wrapped in Arc for multi-task sharing)
+    // 3. Open Eclipse Zenoh Session
     info!("Opening Zenoh network session...");
-    let zenoh_config = Config::default();
+    let mut zenoh_config = Config::default();
+
+    let listen_json = format!(r#"["{}"]"#, config.zenoh.listen_endpoint);
+    
+    // Using the literal string path "listen/endpoints" instead of the missing constant
+    zenoh_config
+        .insert_json5("listen/endpoints", &listen_json)
+        .map_err(|e| {
+            error!("Failed to set Zenoh listen endpoint: {e}");
+            e
+        })?;
+
+
     let zenoh_session = Arc::new(
         zenoh::open(zenoh_config)
             .await
@@ -63,35 +101,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             })?
     );
 
-    // 4. (Optional) Initial Test Dispatch
-    info!("Triggering initial test order dispatch...");
-    match fleet_manager
-        .dispatch_order(
-            &zenoh_session,
-            &router,
-            "Mir",
-            "AMR-01",
-            "node_A1",
-            "node_A3",
-            "ORD-2026-0001",
-            60,
-        )
-        .await
-    {
-        Ok(order) => {
-            info!(
-                "Successfully dispatched order '{}' for Mir:AMR-01 across {} nodes!",
-                order.order_id,
-                order.nodes.len()
-            );
-        }
-        Err(err) => {
-            warn!("Initial test order dispatch skipped or failed: {err}");
-        }
-    }
-
-    // 5. Declare Zenoh Subscriber for VDA 5050 state topics
-    let topic_pattern = "issem/v3/*/*/state";
+    // 4. Declare Zenoh Subscriber using topic pattern from config
+    let topic_pattern = &config.zenoh.state_topic_pattern;
     info!("Declaring Zenoh subscriber on topic pattern: '{topic_pattern}'");
 
     let subscriber = zenoh_session
@@ -102,57 +113,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             e
         })?;
 
-    // 6. Spawn Telemetry Listener in a Background Task
+    // 5. Spawn Telemetry Listener Background Task
     let fleet_mgr_telemetry = fleet_manager.clone();
-    let tx_telemetry = tx.clone(); // 🆕 NEW: Clone channel sender for the background task
+    let tx_telemetry = tx.clone();
 
     tokio::spawn(async move {
         info!("ISSEM FMS Core active. Telemetry listener thread started.");
 
         while let Ok(sample) = subscriber.recv_async().await {
             let key_expr = sample.key_expr().to_string();
-            info!("📩 [ZENOH] Received raw message on topic: {key_expr}");
-
             let payload = sample.payload().to_bytes().to_vec();
 
             let parts: Vec<&str> = key_expr.split('/').collect();
             if parts.len() != 5 {
-                warn!("⚠️ Received message on invalid key expression format: {key_expr}");
                 continue;
             }
 
             let mfr = parts[2].to_string();
             let sn = parts[3].to_string();
             let fm = fleet_mgr_telemetry.clone();
-            let tx_inner = tx_telemetry.clone(); // 🆕 NEW: Pass sender to inner task
+            let tx_inner = tx_telemetry.clone();
 
             tokio::spawn(async move {
                 let raw_json = String::from_utf8_lossy(&payload).to_string();
                 let _ = tx_inner.send(raw_json.clone());
 
-                // 🆕 NEW: Instantly forward the raw JSON telemetry over WebSockets to UI clients!
-
-                match serde_json::from_slice::<VdaState>(&payload) {
-                    Ok(vda_state) => {
-                        info!(
-                            "✅ [DESERIALIZATION] Parsed state for {mfr}:{sn} (Current Node: '{}')",
-                            vda_state.last_node_id
-                        );
-
-                        if let Err(err) = fm.update_robot_state(&mfr, &sn, &vda_state).await {
-                            error!("❌ Failed to persist telemetry to Redis for {mfr}:{sn}: {err}");
-                        }
-                    }
-                    Err(err) => {
-                        warn!("⚠️ [DESERIALIZATION ERROR] Failed to parse payload from {mfr}:{sn}: {err}");
-                        warn!("Raw JSON was: {raw_json}");
-                    }
+                if let Ok(vda_state) = serde_json::from_slice::<VdaState>(&payload) {
+                    let _ = fm.update_robot_state(&mfr, &sn, &vda_state).await;
                 }
             });
         }
     });
 
-    // 7. Setup & Run Axum REST API Server (Main Thread)
+    // 6. Setup & Run Axum REST API Server
     let shared_state = AppState {
         router,
         fleet_manager,
@@ -164,10 +157,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/api/v1/robots/{robot_id}/orders", axum::routing::post(api::dispatch_order_handler))
         .route("/api/v1/tasks", axum::routing::post(api::create_transport_task_handler))
         .route("/api/v1/ws", axum::routing::get(ws_handler))
-        .fallback_service(ServeDir::new("static")) // 👈 Change .nest_service("/", ...) to .fallback_service(...)
+        .fallback_service(ServeDir::new("static"))
         .with_state(shared_state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.server.port));
     info!("🚀 ISSEM Core API server listening on http://{addr}");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;

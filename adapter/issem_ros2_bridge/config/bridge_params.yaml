@@ -1,0 +1,5 @@
+issem_ros2_bridge:
+  ros__parameters:
+    agv_id: "AMR-01"
+    manufacturer: "Mir"
+    zenoh_locator: "tcp/127.0.0.1:7447"

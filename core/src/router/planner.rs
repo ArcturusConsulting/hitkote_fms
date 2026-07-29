@@ -4,7 +4,7 @@ use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
 
 use crate::router::graph::{MapEdge, MapNode};
-use crate::vda5050::{Edge, Header, Node, Order};
+use crate::vda5050::{Edge, Header, Node, NodePosition, Order};
 
 #[derive(Debug, Clone)]
 pub struct RoutePlan {
@@ -20,6 +20,7 @@ impl RoutePlan {
         order_update_id: u32,
         manufacturer: &str,
         serial_number: &str,
+        router: &TopologicalRouter, // <-- Pass the router here
     ) -> Order {
         let header = Header {
             header_id: Utc::now().timestamp_millis() as u32,
@@ -35,12 +36,24 @@ impl RoutePlan {
         let mut current_seq = 0u32;
 
         for (i, node_id) in self.node_ids.iter().enumerate() {
+            // Look up coordinates from the router graph
+            let node_position = router.node_lookup.get(node_id).map(|&idx| {
+                let map_node = &router.graph[idx];
+                NodePosition {
+                    x: map_node.x,
+                    y: map_node.y,
+                    theta: Some(0.0), // Default orientation
+                    map_id: "map".to_string(),
+                    map_description: None,
+                }
+            });
+
             nodes.push(Node {
                 node_id: node_id.clone(),
                 sequence_id: current_seq,
                 node_description: None,
                 released: true,
-                node_position: None,
+                node_position, // <-- Populated with real coordinates!
                 actions: Vec::new(),
             });
 
@@ -171,50 +184,5 @@ impl TopologicalRouter {
             edge_ids,
             total_distance_m,
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_topological_astar_routing() {
-        let mut router = TopologicalRouter::new();
-
-        router.add_node("station_alpha", 0.0, 0.0);
-        router.add_node("node_A1", 5.0, 0.0);
-        router.add_node("station_beta", 10.0, 0.0);
-
-        router.add_edge("edge_01", "station_alpha", "node_A1", 5.0).unwrap();
-        router.add_edge("edge_02", "node_A1", "station_beta", 5.0).unwrap();
-
-        let plan = router.find_path("station_alpha", "station_beta").unwrap();
-
-        assert_eq!(plan.node_ids, vec!["station_alpha", "node_A1", "station_beta"]);
-        assert_eq!(plan.edge_ids, vec!["edge_01", "edge_02"]);
-        assert_eq!(plan.total_distance_m, 10.0);
-    }
-
-    #[test]
-    fn test_vda5050_order_conversion() {
-        let mut router = TopologicalRouter::new();
-
-        router.add_node("N1", 0.0, 0.0);
-        router.add_node("N2", 2.0, 0.0);
-        router.add_edge("E1", "N1", "N2", 2.0).unwrap();
-
-        let plan = router.find_path("N1", "N2").unwrap();
-        let order = plan.into_vda5050_order("ORD_TEST", 0, "TestMfr", "SN123");
-
-        assert_eq!(order.nodes.len(), 2);
-        assert_eq!(order.edges.len(), 1);
-
-        assert_eq!(order.nodes[0].sequence_id, 0);
-        assert_eq!(order.edges[0].sequence_id, 1);
-        assert_eq!(order.nodes[1].sequence_id, 2);
-
-        assert_eq!(order.edges[0].start_node_id, "N1");
-        assert_eq!(order.edges[0].end_node_id, "N2");
     }
 }

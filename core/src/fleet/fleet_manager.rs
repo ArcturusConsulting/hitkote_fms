@@ -97,8 +97,7 @@ impl FleetManager {
         }
 
         // 3. Convert RoutePlan into a valid VDA 5050 Order
-        let order = plan.into_vda5050_order(order_id, 0, manufacturer, serial_number);
-
+        let order = plan.into_vda5050_order(order_id, 0, manufacturer, serial_number, router);
         // 4. Serialize and publish over Zenoh
         let topic = format!("uagv/v2/{manufacturer}/{serial_number}/order");
         let payload = serde_json::to_string(&order)?;

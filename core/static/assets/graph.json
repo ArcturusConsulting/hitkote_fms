@@ -1,0 +1,13 @@
+{
+  "nodes": {
+    "ChargingStation": { "x": 0.0, "y": 0.0 },
+    "WayPoint_A": { "x": -2.5, "y": 1.0 },
+    "PickZone_1": { "x": -5.0, "y": 2.0 },
+    "DropZone_1": { "x": -8.0, "y": -1.5 }
+  },
+  "edges": [
+    ["ChargingStation", "WayPoint_A", 2.7],
+    ["WayPoint_A", "PickZone_1", 2.7],
+    ["PickZone_1", "DropZone_1", 4.6]
+  ]
+}

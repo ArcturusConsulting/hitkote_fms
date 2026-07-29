@@ -1,0 +1,17 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 3000
+  },
+  "redis": {
+    "url": "redis://127.0.0.1:6379"
+  },
+  "zenoh": {
+    "listen_endpoint": "tcp/127.0.0.1:7447",
+    "state_topic_pattern": "issem/v3/*/*/state"
+  },
+  "paths": {
+    "assets_dir": "static/assets",
+    "graph_file": "static/assets/graph.json"
+  }
+}

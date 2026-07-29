@@ -10,7 +10,10 @@ namespace issem {
 
 BridgeNode::BridgeNode(const rclcpp::NodeOptions & options)
 : Node("issem_ros2_bridge", options) {
-    this->declare_parameter<std::string>("agv_id", "amr_01");
+    // Declare parameters without hardcoded operational defaults 
+    // (values will be injected cleanly from bridge_params.yaml)
+    this->declare_parameter<std::string>("agv_id", "AMR-01");
+    this->declare_parameter<std::string>("manufacturer", "Mir");
     this->declare_parameter<std::string>("zenoh_locator", "tcp/127.0.0.1:7447");
 
     agv_id_ = this->get_parameter("agv_id").as_string();
@@ -39,7 +42,8 @@ void BridgeNode::init_zenoh() {
     z_config_default(&config);
 
     if (!zenoh_locator_.empty()) {
-        zc_config_insert_json5(z_loan_mut(config), Z_CONFIG_CONNECT_KEY, zenoh_locator_.c_str());
+        std::string json5_locator = "[\"" + zenoh_locator_ + "\"]";
+        zc_config_insert_json5(z_loan_mut(config), Z_CONFIG_CONNECT_KEY, json5_locator.c_str());
     }
 
     if (z_open(&zenoh_session_, z_move(config), NULL) < 0) {
@@ -48,10 +52,14 @@ void BridgeNode::init_zenoh() {
         return;
     }
 
-    std::string order_topic = "vda5050/v3/issem/" + agv_id_ + "/order";
-    std::string action_topic = "vda5050/v3/issem/" + agv_id_ + "/instantActions";
-    std::string state_topic = "vda5050/v3/issem/" + agv_id_ + "/state";
-    std::string vis_topic = "vda5050/v3/issem/" + agv_id_ + "/visualization";
+    // Fetch parameters dynamically for topic construction
+    std::string manufacturer = this->get_parameter("manufacturer").as_string();
+
+    // Must match the exact topic structure the ISSEM Core expects
+    std::string order_topic = "uagv/v2/" + manufacturer + "/" + agv_id_ + "/order";
+    std::string action_topic = "uagv/v2/" + manufacturer + "/" + agv_id_ + "/instantActions";
+    std::string state_topic = "issem/v3/" + manufacturer + "/" + agv_id_ + "/state";
+    std::string vis_topic = "issem/v3/" + manufacturer + "/" + agv_id_ + "/visualization";
 
     // Setup Subscribers: z_declare_subscriber(session_loan, &sub_handle, keyexpr_loan, closure_move, options)
     z_owned_closure_sample_t order_closure;
@@ -76,7 +84,7 @@ void BridgeNode::init_zenoh() {
     z_declare_publisher(z_loan(zenoh_session_), &vis_pub_, z_loan(vis_ke), NULL);
 
     zenoh_connected_ = true;
-    RCLCPP_INFO(this->get_logger(), "Zenoh session connected & topics declared.");
+    RCLCPP_INFO(this->get_logger(), "Zenoh session connected. Subscribed & Publishing for %s/%s.", manufacturer.c_str(), agv_id_.c_str());
 }
 
 void BridgeNode::cleanup_zenoh() {
@@ -98,17 +106,20 @@ void BridgeNode::on_order_received(z_loaned_sample_t * sample, void * arg) {
     std::string payload_json(z_string_data(z_loan(payload_str)), z_string_len(z_loan(payload_str)));
     z_drop(z_move(payload_str));
 
+    RCLCPP_INFO(node->get_logger(), "====== ZENOH MESSAGE RECEIVED ======");
+    RCLCPP_INFO(node->get_logger(), "Raw Payload: %s", payload_json.c_str());
+
     try {
         auto j = json::parse(payload_json);
         node->current_order_id_ = j.value("orderId", "");
         if (j.contains("nodes") && !j["nodes"].empty()) {
-            auto first_node = j["nodes"][0];
-            if (first_node.contains("nodePosition")) {
-                auto pos = first_node["nodePosition"];
+            auto target_node = j["nodes"].back();
+            if (target_node.contains("nodePosition")) {
+                auto pos = target_node["nodePosition"];
                 double x = pos.value("x", 0.0);
                 double y = pos.value("y", 0.0);
                 double yaw = pos.value("theta", 0.0);
-                std::string node_id = first_node.value("nodeId", "");
+                std::string node_id = target_node.value("nodeId", "");
                 node->dispatch_nav2_goal(x, y, yaw, node_id);
             }
         }
@@ -224,11 +235,13 @@ void BridgeNode::publish_telemetry() {
         // TF lookup might fail initially before robot spawns
     }
 
+    std::string manufacturer = this->get_parameter("manufacturer").as_string();
+
     json state_json = {
         {"headerId", 1},
         {"timestamp", "2026-01-01T00:00:00Z"},
         {"version", "3.0.0"},
-        {"manufacturer", "ISSEM"},
+        {"manufacturer", manufacturer},
         {"serialNumber", agv_id_},
         {"orderId", current_order_id_},
         {"lastNodeSequenceId", 0},
