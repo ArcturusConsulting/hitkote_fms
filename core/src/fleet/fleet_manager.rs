@@ -2,49 +2,25 @@ use crate::router::TopologicalRouter;
 use crate::vda5050::{Order, State as VdaState};
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
-use std::fmt;
 use zenoh::Session;
 
 /// Custom error type for fleet management operations
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum FleetError {
-    Redis(redis::RedisError),
-    Serialization(serde_json::Error),
-    Zenoh(zenoh::Error),
+    #[error("Redis error: {0}")]
+    Redis(#[from] redis::RedisError),
+
+    #[error("JSON serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    #[error("Zenoh transport error: {0}")]
+    Zenoh(#[from] zenoh::Error),
+
+    #[error("Pathfinding error: {0}")]
     NoRouteFound(String),
+
+    #[error("Lock conflict: {0}")]
     PathOccupied(String),
-}
-
-impl fmt::Display for FleetError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FleetError::Redis(err) => write!(f, "Redis error: {err}"),
-            FleetError::Serialization(err) => write!(f, "JSON serialization error: {err}"),
-            FleetError::Zenoh(err) => write!(f, "Zenoh transport error: {err}"),
-            FleetError::NoRouteFound(msg) => write!(f, "Pathfinding error: {msg}"),
-            FleetError::PathOccupied(msg) => write!(f, "Lock conflict: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for FleetError {}
-
-impl From<redis::RedisError> for FleetError {
-    fn from(err: redis::RedisError) -> Self {
-        FleetError::Redis(err)
-    }
-}
-
-impl From<serde_json::Error> for FleetError {
-    fn from(err: serde_json::Error) -> Self {
-        FleetError::Serialization(err)
-    }
-}
-
-impl From<zenoh::Error> for FleetError {
-    fn from(err: zenoh::Error) -> Self {
-        FleetError::Zenoh(err)
-    }
 }
 
 /// Async Fleet Manager responsible for persisting telemetry snapshots,
@@ -55,19 +31,19 @@ pub struct FleetManager {
 }
 
 impl FleetManager {
+    // Creates a new lightweight handle to the Redis connection manager
     pub fn get_redis_conn(&self) -> redis::aio::ConnectionManager {
             self.redis.clone()
         }
 
-    /// Connects to Redis and establishes a resilient async connection manager.
+    // Connects to Redis and establishes a resilient async connection manager
     pub async fn new(redis_url: &str) -> Result<Self, FleetError> {
         let client = redis::Client::open(redis_url)?;
         let manager = ConnectionManager::new(client).await?;
         Ok(Self { redis: manager })
     }
 
-    /// Calculates a route, atomically reserves spatial locks in Redis with a TTL,
-    /// converts the plan into a VDA 5050 Order, and dispatches it over Zenoh.
+    // Dispatches a VDA 5050 order to a specific robot 
     pub async fn dispatch_order(
         &self,
         zenoh: &Session,
@@ -79,12 +55,12 @@ impl FleetManager {
         order_id: &str,
         lock_ttl_secs: u64,
     ) -> Result<Order, FleetError> {
-        // 1. Calculate path
+        // 1. Calculate path using the topological router
         let plan = router.find_path(start_node, target_node).ok_or_else(|| {
             FleetError::NoRouteFound(format!("No path found from '{start_node}' to '{target_node}'"))
         })?;
 
-        // 2. Atomically reserve all nodes on the path using Lua script
+        // 2. Atomically reserve all nodes on the path (make sure the path is not locked by another robot)
         let node_refs: Vec<&str> = plan.node_ids.iter().map(|s| s.as_str()).collect();
         let acquired = self
             .try_reserve_path(&node_refs, serial_number, lock_ttl_secs)
@@ -98,12 +74,13 @@ impl FleetManager {
 
         // 3. Convert RoutePlan into a valid VDA 5050 Order
         let order = plan.into_vda5050_order(order_id, 0, manufacturer, serial_number, router);
+
         // 4. Serialize and publish over Zenoh
-        let topic = format!("uagv/v2/{manufacturer}/{serial_number}/order");
+        let topic = order.topic();
         let payload = serde_json::to_string(&order)?;
 
         zenoh.put(&topic, payload).await?;
-        tracing::info!("🚀 Dispatched Order '{order_id}' to [{serial_number}] on '{topic}'");
+        tracing::info!("Dispatched Order '{order_id}' to [{serial_number}] on '{topic}'");
 
         Ok(order)
     }
@@ -112,8 +89,8 @@ impl FleetManager {
     /// and automatically releases the previous node lock when the robot moves to a new node.
     pub async fn update_robot_state(
         &self,
-        mfr: &str,
-        sn: &str,
+        mfr: &str, // Manufacturer
+        sn: &str, // Serial Number
         state: &VdaState,
     ) -> Result<(), FleetError> {
         let state_key = format!("issem:robot:{mfr}:{sn}:state");
@@ -129,12 +106,12 @@ impl FleetManager {
                 match self.release_node_lock(old_node, sn).await {
                     Ok(true) => {
                         tracing::info!(
-                            "🔄 REACTIVE RELEASE: [{sn}] moved '{old_node}' -> '{new_node}'. Released lock on '{old_node}'"
+                            "REACTIVE RELEASE: [{sn}] moved '{old_node}' -> '{new_node}'. Released lock on '{old_node}'"
                         );
                     }
                     Ok(false) => {
                         tracing::info!(
-                            "📍 NODE TRANSITION: [{sn}] moved '{old_node}' -> '{new_node}' (No active lock held on '{old_node}')"
+                            "NODE TRANSITION: [{sn}] moved '{old_node}' -> '{new_node}' (No active lock held on '{old_node}')"
                         );
                     }
                     Err(err) => {

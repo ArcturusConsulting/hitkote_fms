@@ -1,9 +1,11 @@
 use chrono::Utc;
+use tracing::warn;
+use std::fs;
 use petgraph::algo::astar;
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
 
-use crate::router::graph::{MapEdge, MapNode};
+use crate::router::graph::{GraphConfig, MapEdge, MapNode};
 use crate::vda5050::{Edge, Header, Node, NodePosition, Order};
 
 #[derive(Debug, Clone)]
@@ -101,6 +103,32 @@ impl TopologicalRouter {
             graph: DiGraph::new(),
             node_lookup: HashMap::new(),
         }
+    }
+
+    /// Loads a topological graph directly from a JSON configuration file.
+    pub fn from_file(path: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let mut router = Self::new();
+        
+        // 1. Read file to string
+        let content = fs::read_to_string(path)?;
+        
+        // 2. Parse JSON into our GraphConfig struct
+        let config: GraphConfig = serde_json::from_str(&content)?;
+
+        // 3. Populate nodes
+        for (node_id, pos) in &config.nodes {
+            router.add_node(node_id, pos.x, pos.y);
+        }
+
+        // 4. Populate edges
+        for (from, to, dist) in &config.edges {
+            let edge_id = format!("edge_{}_{}", from, to);
+            if let Err(e) = router.add_edge(&edge_id, from, to, *dist) {
+                warn!("Failed to add edge {edge_id}: {e}");
+            }
+        }
+
+        Ok(router)
     }
 
     pub fn add_node(&mut self, id: &str, x: f64, y: f64) {

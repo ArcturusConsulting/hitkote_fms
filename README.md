@@ -1,12 +1,12 @@
 ![ISSEM Logo](ISSEM.png)
 
-# ISSEM FMS (Intralogistics System Smart Edge Manager)
+# ISSEM FMS (Interoperable Semantic Synchronization Ensemble Middleware - Fleet Management System)
 
 An open-source, vendor-agnostic Fleet Management System (FMS) built on **Eclipse Zenoh** and **VDA 5050 v3.0.0**. Designed to orchestrate heterogeneous fleets of Autonomous Mobile Robots (AMRs) and Automated Guided Vehicles (AGVs) in high-density warehouse and manufacturing environments.
 
 ---
 
-## 🛑 The Problem: Vendor Lock-In & Unreliable Wireless
+## 🛑 The Problem: Vendor Lock-In & Unreliable Wireless Connectivity
 
 Traditional intralogistics relies heavily on proprietary Systems Integrator (SI) platforms and single-vendor hardware ecosystems:
 * **Vendor Lock-In:** Integrating AMRs from Manufacturer A with AGVs from Manufacturer B requires costly custom middleware or entirely separate software silos.
@@ -30,14 +30,20 @@ ISSEM FMS provides a **local-first, open-source orchestration core** that bridge
 ## 📐 System Architecture
 
 ```text
-+-----------------------------------------------------------------------+
-|                       WMS / ERP / Enterprise Systems                  |
-+-----------------------------------------------------------------------+
-                                   |  HTTP POST /api/v1/orders
-                                   v
-+-----------------------------------------------------------------------+
++----------------------------------+   +----------------------------------+
+|  WMS / ERP / Enterprise Systems  |   |    Operator GUI / Web Dashboard  |
+|  (WES / Fleet Supervisor)        |   |    (Browser Client)              |
++----------------------------------+   +----------------------------------+
+                 |                                  |           ^
+                 | HTTP POST /tasks                 | HTTP GET  | WebSocket
+                 | HTTP POST /orders                | static    | /api/v1/ws
+                 +-----------------+----------------+           | (Live Telemetry)
+                                   |                            |
+                                   v                            |
++---------------------------------------------------------------+-------+
 |                         ISSEM FMS CORE (Rust)                         |
-|  - Axum Web Server (REST API & WebSockets Dashboard on Port 8080)     |
+|  - Axum Web Server (REST API, WebSocket Hub, Static File Host @ 8080) |
+|  - Tokio Broadcast Engine (`broadcast::channel` Telemetry Fan-out)    |
 |  - Petgraph Topological Router (A* / Dijkstra Pathfinding)            |
 |  - Dynamic Node & Zone Traffic Reservation Manager                    |
 |  - Zenoh Router (`zenoh-rs`)                                          |
@@ -47,7 +53,7 @@ ISSEM FMS provides a **local-first, open-source orchestration core** that bridge
                 |                                     |
                 v                                     v
 +----------------------------------+ +----------------------------------+
-|  REDIS 7 STATE STORE & LOCKS     | |  ZENOH BUS (UDP / Multicast)    |
+|  REDIS 7 STATE STORE & LOCKS     | |  ZENOH BUS (UDP / Multicast)     |
 |  - `issem:robot:*` Telemetry     | |  Pattern: `issem/v3/{mfr}/{sn}/` |
 |  - `issem:traffic:*` Leased Locks| |  Payload: VDA 5050 v3.0.0 JSON   |
 |  - `issem:order:*` Active State  | +----------------------------------+
@@ -63,8 +69,9 @@ ISSEM FMS provides a **local-first, open-source orchestration core** that bridge
                                    |                                     |
                                    v Local ROS 2 IPC                     v Serial / Fieldbus
                   +---------------------------------+   +---------------------------------+
-                  |   Modern ROS 2 AMR (Nav2 / SLAM) |   |     Legacy Industrial AGV       |
+                  |   Modern ROS 2 AMR (Nav2 / SLAM)|   |     Legacy Industrial AGV       |
                   +---------------------------------+   +---------------------------------+
+                 
 ```
 
 ---

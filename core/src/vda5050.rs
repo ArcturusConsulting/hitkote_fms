@@ -203,3 +203,59 @@ pub enum ErrorLevel {
     Warning,
     Fatal,
 }
+
+// ============================================================================
+// TOPIC BUILDERS (VDA 5050 Wire Protocol Constants & Utilities)
+// ============================================================================
+
+impl Header {
+    /// Generates a standard VDA 5050 topic string given a subtopic name.
+    /// Pattern: `uagv/v2/{manufacturer}/{serial_number}/{subtopic}`
+    pub fn topic(&self, subtopic: &str) -> String {
+        format!(
+            "uagv/v2/{}/{}/{}",
+            self.manufacturer, self.serial_number, subtopic
+        )
+    }
+}
+
+impl Order {
+    /// Returns the Zenoh/MQTT topic for this specific order instance.
+    pub fn topic(&self) -> String {
+        self.header.topic("order")
+    }
+
+    /// Constructs an order topic directly from manufacturer and serial number.
+    pub fn topic_for(manufacturer: &str, serial_number: &str) -> String {
+        format!("uagv/v2/{manufacturer}/{serial_number}/order")
+    }
+}
+
+impl InstantActions {
+    /// Returns the Zenoh/MQTT topic for this instant action instance.
+    pub fn topic(&self) -> String {
+        self.header.topic("instantActions")
+    }
+
+    /// Constructs an instantActions topic directly from manufacturer and serial number.
+    pub fn topic_for(manufacturer: &str, serial_number: &str) -> String {
+        format!("uagv/v2/{manufacturer}/{serial_number}/instantActions")
+    }
+}
+
+impl State {
+    /// Returns the Zenoh/MQTT topic for this state message instance.
+    pub fn topic(&self) -> String {
+        self.header.topic("state")
+    }
+
+    /// Constructs a state topic directly from manufacturer and serial number.
+    pub fn topic_for(manufacturer: &str, serial_number: &str) -> String {
+        format!("uagv/v2/{manufacturer}/{serial_number}/state")
+    }
+
+    /// Subscribing wildcard topic for all incoming AMR states across manufacturers.
+    pub fn wildcard_topic() -> &'static str {
+        "uagv/v2/*/*/state"
+    }
+}
