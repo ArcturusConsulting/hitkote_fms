@@ -66,6 +66,10 @@ private:
     z_owned_subscriber_t action_sub_{};
     z_owned_publisher_t state_pub_{};
     z_owned_publisher_t vis_pub_{};
+
+    // Timestamp Helper
+    std::string get_iso_utc_timestamp();
+    uint32_t header_id_{0};
 };
 
 }  // namespace issem

@@ -25,9 +25,9 @@ async function loadGraphTopology() {
         
         NODES = graphData.nodes || {};
         EDGES = (graphData.edges || []).map(edge => [edge[0], edge[1]]);
-        console.log("✅ Dynamic topology loaded:", NODES, EDGES);
+        console.log("Dynamic topology loaded:", NODES, EDGES);
     } catch (err) {
-        console.warn("⚠️ No graph.json found or failed to parse. Rendering map without topology overlays.", err);
+        console.warn("No graph.json found or failed to parse. Rendering map without topology overlays.", err);
     }
 }
 

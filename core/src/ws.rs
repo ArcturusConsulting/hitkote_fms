@@ -8,7 +8,6 @@ use axum::{
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
 
-// 🆕 Import unified AppState from crate::api
 use crate::api::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,12 +27,10 @@ pub struct Position2D {
     pub theta: f64,
 }
 
-// ⚠️ DELETE `pub struct AppState { ... }` from this file!
-
-/// Axum WebSocket Upgrade Handler
+// Axum WebSocket Upgrade Handler
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
-    State(state): State<AppState>, // 👈 If main uses with_state(state), Axum unpacks it to AppState directly
+    State(state): State<AppState>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }

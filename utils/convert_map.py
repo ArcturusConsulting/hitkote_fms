@@ -1,4 +1,3 @@
-# utils/convert_map.py
 import sys
 from pathlib import Path
 from PIL import Image

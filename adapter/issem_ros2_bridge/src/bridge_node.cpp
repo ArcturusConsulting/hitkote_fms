@@ -238,8 +238,8 @@ void BridgeNode::publish_telemetry() {
     std::string manufacturer = this->get_parameter("manufacturer").as_string();
 
     json state_json = {
-        {"headerId", 1},
-        {"timestamp", "2026-01-01T00:00:00Z"},
+        {"headerId", ++header_id_},                 // Monotonically increasing ID
+        {"timestamp", get_iso_utc_timestamp()},     // Dynamic ISO 8601 UTC string
         {"version", "3.0.0"},
         {"manufacturer", manufacturer},
         {"serialNumber", agv_id_},
@@ -282,6 +282,28 @@ void BridgeNode::publish_visualization() {
     z_owned_bytes_t payload;
     z_bytes_copy_from_str(&payload, vis_str.c_str());
     z_publisher_put(z_loan(vis_pub_), z_move(payload), &options);
+}
+
+std::string BridgeNode::get_iso_utc_timestamp() {
+    // Get time from the ROS 2 node clock (supports simulation time seamlessly)
+    rclcpp::Time now = this->now();
+    
+    // Extract seconds and milliseconds
+    int64_t nanos = now.nanoseconds();
+    std::time_t seconds = static_cast<std::time_t>(nanos / 1'000'000'000);
+    uint32_t millis = static_cast<uint32_t>((nanos % 1'000'000'000) / 1'000'000);
+
+    // Convert to UTC broken-down time
+    std::tm bt{};
+    gmtime_r(&seconds, &bt);
+
+    // Format ISO 8601 timestamp: YYYY-MM-DDTHH:MM:SS.mmmZ
+    std::ostringstream oss;
+    oss << std::put_time(&bt, "%Y-%m-%dT%H:%M:%S")
+        << '.' << std::setfill('0') << std::setw(3) << millis
+        << 'Z';
+
+    return oss.str();
 }
 
 }  // namespace issem

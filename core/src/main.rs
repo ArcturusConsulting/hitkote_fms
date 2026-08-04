@@ -15,7 +15,7 @@ use issem_core::ws::ws_handler;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Returns nothing if everything succeeds; catch and return any type of error if something fails
 
-    // 0. Initialize a tracing subscriber for structured logging
+    // 0. Initialize structured logging
     tracing_subscriber::fmt::init();
     info!("Starting ISSEM FMS Core Engine...");
 

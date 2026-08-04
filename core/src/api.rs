@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::fleet::{FleetError, FleetManager, TaskAllocator, TransportTaskRequest};
 use crate::router::TopologicalRouter;
 
-/// Shared application state injected into Axum route handlers.
+// Shared application state injected into Axum route handlers
 #[derive(Clone)]
 pub struct AppState {
     pub router: Arc<TopologicalRouter>,
@@ -20,7 +20,7 @@ pub struct AppState {
     pub tx: tokio::sync::broadcast::Sender<String>,
 }
 
-/// Incoming JSON payload for order dispatching.
+// Incoming JSON payload for order dispatching
 #[derive(Debug, Deserialize)]
 pub struct DispatchRequest {
     pub robot_id: String,
@@ -30,7 +30,7 @@ pub struct DispatchRequest {
     pub lock_ttl_secs: Option<u64>,
 }
 
-/// Outgoing HTTP response payload.
+// Outgoing HTTP response payload
 #[derive(Debug, Serialize)]
 pub struct DispatchResponse {
     pub success: bool,
@@ -39,9 +39,7 @@ pub struct DispatchResponse {
     pub message: String,
 }
 
-/// POST /api/v1/orders/dispatch
-/// POST /api/v1/tasks
-/// Accepts high-level transport requests from WES/WCS and allocates the optimal robot.
+// Accepts high-level transport requests from WES/WCS and allocates the optimal robot
 pub async fn create_transport_task_handler(
     State(state): State<AppState>,
     Json(payload): Json<TransportTaskRequest>,
@@ -66,6 +64,7 @@ pub async fn create_transport_task_handler(
     }
 }
 
+// Handles incoming order dispatch requests for a specific robot
 pub async fn dispatch_order_handler(
     State(state): State<AppState>,
     Json(payload): Json<DispatchRequest>,
