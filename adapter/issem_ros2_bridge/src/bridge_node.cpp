@@ -10,8 +10,7 @@ namespace issem {
 
 BridgeNode::BridgeNode(const rclcpp::NodeOptions & options)
 : Node("issem_ros2_bridge", options) {
-    // Declare parameters without hardcoded operational defaults 
-    // (values will be injected cleanly from bridge_params.yaml)
+    // Declare parameters from bridge_params.yaml
     this->declare_parameter<std::string>("agv_id", "AMR-01");
     this->declare_parameter<std::string>("manufacturer", "Mir");
     this->declare_parameter<std::string>("zenoh_locator", "tcp/127.0.0.1:7447");
@@ -238,8 +237,8 @@ void BridgeNode::publish_telemetry() {
     std::string manufacturer = this->get_parameter("manufacturer").as_string();
 
     json state_json = {
-        {"headerId", ++header_id_},                 // Monotonically increasing ID
-        {"timestamp", get_iso_utc_timestamp()},     // Dynamic ISO 8601 UTC string
+        {"headerId", ++header_id_},
+        {"timestamp", get_iso_utc_timestamp()},
         {"version", "3.0.0"},
         {"manufacturer", manufacturer},
         {"serialNumber", agv_id_},
