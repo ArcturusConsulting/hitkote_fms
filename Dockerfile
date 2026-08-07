@@ -1,5 +1,5 @@
 # --- Build Stage ---
-FROM rust:1.80-slim as builder
+FROM rust:1-slim AS builder
 
 WORKDIR /app
 
@@ -7,12 +7,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
 # Copy workspace / package manifests and source code
-COPY Cargo.toml Cargo.lock ./
-COPY src ./src
+COPY core/Cargo.toml core/Cargo.lock* ./
+COPY core/src ./src
 
 # Build production release binary
-RUN cargo build --release --bin core
-
+RUN cargo build --release --bin issem-core
 # --- Runtime Stage ---
 FROM debian:bookworm-slim
 
@@ -22,8 +21,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
 
 # Copy compiled binary from build stage
-COPY --from=builder /app/target/release/core /app/issem-core
-
+COPY --from=builder /app/target/release/issem-core /app/issem-core
 ENV RUST_LOG=info
 ENV REDIS_URL=redis://redis:6379
 

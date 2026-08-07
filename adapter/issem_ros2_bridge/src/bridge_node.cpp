@@ -221,17 +221,56 @@ void BridgeNode::result_callback(const GoalHandleNav::WrappedResult & result) {
 void BridgeNode::publish_telemetry() {
     if (!zenoh_connected_) return;
 
-    double x = 0.0, y = 0.0, yaw = 0.0;
-    try {
-        auto tf = tf_buffer_->lookupTransform("map", "base_link", tf2::TimePointZero);
-        x = tf.transform.translation.x;
-        y = tf.transform.translation.y;
+    // 1. Resolve active ROS 2 namespace (e.g., "/robot1" -> "robot1")
+    std::string ns = std::string(this->get_namespace());
+    if (!ns.empty() && ns[0] == '/') {
+        ns = ns.substr(1);
+    }
 
-        double qz = tf.transform.rotation.z;
-        double qw = tf.transform.rotation.w;
-        yaw = 2.0 * std::atan2(qz, qw);
-    } catch (const tf2::TransformException & ex) {
-        // TF lookup might fail initially before robot spawns
+    // 2. Candidate frames to search in order of likelihood
+    std::vector<std::string> candidate_frames;
+    if (!ns.empty()) {
+        candidate_frames.push_back(ns + "/base_link");
+        candidate_frames.push_back(ns + "/base_footprint");
+    }
+    candidate_frames.push_back("base_link");
+    candidate_frames.push_back("base_footprint");
+
+    double x = 0.0, y = 0.0, yaw = 0.0;
+    bool tf_found = false;
+
+    // 3. Attempt TF lookup across candidate frames
+    for (const auto & frame : candidate_frames) {
+        try {
+            auto tf = tf_buffer_->lookupTransform("map", frame, tf2::TimePointZero);
+            x = tf.transform.translation.x;
+            y = tf.transform.translation.y;
+
+            double qx = tf.transform.rotation.x;
+            double qy = tf.transform.rotation.y;
+            double qz = tf.transform.rotation.z;
+            double qw = tf.transform.rotation.w;
+
+            // Full 3D quaternion conversion to 2D planar yaw
+            double siny_cosp = 2.0 * (qw * qz + qx * qy);
+            double cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz);
+            yaw = std::atan2(siny_cosp, cosy_cosp);
+
+            tf_found = true;
+            break;
+        } catch (const tf2::TransformException & ex) {
+            continue;
+        }
+    }
+
+    if (!tf_found) {
+        RCLCPP_WARN_THROTTLED(
+            this->get_logger(),
+            *this->get_clock(),
+            5000,
+            "Could not lookup transform map -> base_link/footprint for namespace '%s'",
+            ns.c_str()
+        );
     }
 
     std::string manufacturer = this->get_parameter("manufacturer").as_string();
@@ -250,7 +289,7 @@ void BridgeNode::publish_telemetry() {
             {"y", y},
             {"theta", yaw},
             {"mapId", "map"},
-            {"positionInitialized", true}
+            {"positionInitialized", tf_found}
         }},
         {"operatingMode", "AUTOMATIC"},
         {"safetyStatus", {

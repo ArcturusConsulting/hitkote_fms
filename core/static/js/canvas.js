@@ -1,5 +1,5 @@
 export class MapRenderer {
-    constructor(canvasId) {
+    constructor(canvasId, onRobotSelect = null) {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext("2d");
         
@@ -18,6 +18,14 @@ export class MapRenderer {
         this.isDragging = false;
         this.startX = 0;
         this.startY = 0;
+        this.hasDragged = false; // Distinguish clicks from dragging
+
+        // Callback when a robot is clicked on the map
+        this.onRobotSelect = onRobotSelect;
+
+        // Internal reference to current fleet for hit testing
+        this.currentFleet = {};
+        this.currentNodes = {};
 
         this.initMap();
         this.initInteractionListeners();
@@ -47,11 +55,8 @@ export class MapRenderer {
             this.mapImage.src = `/assets/${imageName}`;
             this.mapImage.onload = () => {
                 this.mapLoaded = true;
-                // Set initial canvas drawing buffer size to match image dimensions
                 this.canvas.width = this.canvas.parentElement.clientWidth || 800;
                 this.canvas.height = this.canvas.parentElement.clientHeight || 600;
-
-                // Automatically fit map into the container view on first load
                 this.fitMapToScreen();
             };
         } catch (err) {
@@ -68,33 +73,40 @@ export class MapRenderer {
         if (!this.mapLoaded) return;
         const hRatio = this.canvas.width / this.mapImage.width;
         const vRatio = this.canvas.height / this.mapImage.height;
-        this.scale = Math.min(hRatio, vRatio) * 0.9; // 90% fit view
+        this.scale = Math.min(hRatio, vRatio) * 0.9;
         
-        // Center the map
         this.offsetX = (this.canvas.width - this.mapImage.width * this.scale) / 2;
         this.offsetY = (this.canvas.height - this.mapImage.height * this.scale) / 2;
     }
 
     initInteractionListeners() {
-        // 1. Mouse Down (Start Drag / Pan)
+        // 1. Mouse Down
         this.canvas.addEventListener('mousedown', (e) => {
             this.isDragging = true;
+            this.hasDragged = false;
             this.startX = e.clientX - this.offsetX;
             this.startY = e.clientY - this.offsetY;
         });
 
-        // 2. Mouse Move (Pan Canvas)
+        // 2. Mouse Move
         window.addEventListener('mousemove', (e) => {
             if (!this.isDragging) return;
+            this.hasDragged = true; // User is panning, so do not trigger click/selection
             this.offsetX = e.clientX - this.startX;
             this.offsetY = e.clientY - this.startY;
         });
 
-        // 3. Mouse Up / Leave (Stop Drag)
-        window.addEventListener('mouseup', () => { this.isDragging = false; });
+        // 3. Mouse Up / Click Selection
+        window.addEventListener('mouseup', (e) => { 
+            if (this.isDragging && !this.hasDragged && e.target === this.canvas) {
+                this.handleMapClick(e);
+            }
+            this.isDragging = false; 
+        });
+
         this.canvas.addEventListener('mouseleave', () => { this.isDragging = false; });
 
-        // 4. Mouse Wheel (Zoom In / Out centered on mouse pointer)
+        // 4. Mouse Wheel (Zoom)
         this.canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
             if (!this.mapLoaded) return;
@@ -104,38 +116,72 @@ export class MapRenderer {
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
 
-            // Determine zoom direction
             const oldScale = this.scale;
             if (e.deltaY < 0) {
-                this.scale *= zoomFactor; // Zoom in
+                this.scale *= zoomFactor;
             } else {
-                this.scale /= zoomFactor; // Zoom out
+                this.scale /= zoomFactor;
             }
 
-            // Clamp zoom bounds (min fit view, max 10x zoom)
             this.scale = Math.max(0.05, Math.min(this.scale, 10.0));
 
-            // Adjust offset so zoom focuses on mouse cursor position
             this.offsetX = mouseX - (mouseX - this.offsetX) * (this.scale / oldScale);
             this.offsetY = mouseY - (mouseY - this.offsetY) * (this.scale / oldScale);
         }, { passive: false });
     }
 
+    handleMapClick(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
+
+        const clickedRobotId = this.getRobotAtCanvasCoords(clickX, clickY);
+        if (this.onRobotSelect) {
+            this.onRobotSelect(clickedRobotId); // Pass selected robot ID or null
+        }
+    }
+
+    getRobotAtCanvasCoords(clickX, clickY) {
+        for (const [robotId, state] of Object.entries(this.currentFleet)) {
+            let rx, ry;
+            if (state.x !== undefined && state.y !== undefined) {
+                rx = state.x;
+                ry = state.y;
+            } else if (typeof state === 'string' && this.currentNodes[state]) {
+                rx = this.currentNodes[state].x;
+                ry = this.currentNodes[state].y;
+            }
+
+            if (rx !== undefined && ry !== undefined) {
+                const { cx, cy } = this.worldToCanvas(rx, ry);
+                const markerRadius = Math.max(8, 12 * this.scale);
+                
+                // Hit threshold radius (clickable area)
+                const distance = Math.hypot(clickX - cx, clickY - cy);
+                if (distance <= markerRadius * 1.8) {
+                    return robotId;
+                }
+            }
+        }
+        return null;
+    }
+
     worldToCanvas(x, y) {
         if (!this.mapLoaded) return { cx: 0, cy: 0 };
         
-        // 1. Convert ROS meters to raw map image pixels
         const imgPx = (x - this.originX) / this.resolution;
         const imgPy = this.mapImage.height - (y - this.originY) / this.resolution;
         
-        // 2. Apply viewport zoom scale and pan offset
         const cx = imgPx * this.scale + this.offsetX;
         const cy = imgPy * this.scale + this.offsetY;
         
         return { cx, cy };
     }
 
-    draw(nodes, edges, robotState) {
+    draw(nodes, edges, fleetState, selectedRobotId = null) {
+        this.currentNodes = nodes;
+        this.currentFleet = fleetState || {};
+
         const { ctx, canvas } = this;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -149,10 +195,9 @@ export class MapRenderer {
             return;
         }
 
-        // Save context state for viewport transform
         ctx.save();
 
-        // 1. Draw Map Image with current pan/zoom matrix
+        // 1. Draw Map Image
         ctx.drawImage(
             this.mapImage, 
             this.offsetX, 
@@ -190,31 +235,41 @@ export class MapRenderer {
             ctx.fillText(nodeId, cx, cy - (12 * this.scale));
         });
 
-        // 4. Draw Real-Time AGV Robot
-        if (robotState) {
+        // 4. Draw Fleet Robots
+        Object.entries(this.currentFleet).forEach(([robotId, state]) => {
             let rx, ry, rtheta = 0;
 
-            if (typeof robotState === 'object' && robotState.x !== undefined && robotState.y !== undefined) {
-                rx = robotState.x;
-                ry = robotState.y;
-                rtheta = robotState.theta || 0;
-            } else if (nodes[robotState]) {
-                rx = nodes[robotState].x;
-                ry = nodes[robotState].y;
+            if (state && state.x !== undefined && state.y !== undefined) {
+                rx = state.x;
+                ry = state.y;
+                rtheta = state.theta || 0;
+            } else if (typeof state === 'string' && nodes[state]) {
+                rx = nodes[state].x;
+                ry = nodes[state].y;
             }
 
             if (rx !== undefined && ry !== undefined) {
                 const { cx, cy } = this.worldToCanvas(rx, ry);
                 const markerRadius = Math.max(8, 12 * this.scale);
+                const isSelected = robotId === selectedRobotId;
+
+                // Active Selection Highlight Ring
+                if (isSelected) {
+                    ctx.strokeStyle = "#7aa2f7";
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, markerRadius * 2.2, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
 
                 // Pulse Glow
-                ctx.fillStyle = "rgba(158, 206, 106, 0.3)";
+                ctx.fillStyle = isSelected ? "rgba(122, 162, 247, 0.4)" : "rgba(158, 206, 106, 0.3)";
                 ctx.beginPath();
                 ctx.arc(cx, cy, markerRadius * 1.6, 0, Math.PI * 2);
                 ctx.fill();
 
                 // Robot Marker Body
-                ctx.fillStyle = "#9ece6a";
+                ctx.fillStyle = isSelected ? "#7aa2f7" : "#9ece6a";
                 ctx.beginPath();
                 ctx.arc(cx, cy, markerRadius, 0, Math.PI * 2);
                 ctx.fill();
@@ -229,13 +284,14 @@ export class MapRenderer {
                 ctx.lineTo(headX, headY);
                 ctx.stroke();
 
+                // Label (Robot ID / AGV)
                 ctx.fillStyle = "#1a1b26";
                 ctx.font = "bold 8px sans-serif";
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
-                ctx.fillText("AGV", cx, cy);
+                ctx.fillText(robotId.substring(0, 5), cx, cy);
             }
-        }
+        });
 
         ctx.restore();
     }

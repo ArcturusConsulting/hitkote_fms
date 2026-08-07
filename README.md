@@ -212,11 +212,15 @@ The Axum core runs both REST and WebSockets on port `8080`:
    ros2 run issem_ros2_bridge bridge_node --ros-args -p agv_id:=amr_01 -p use_sim_time:=true
    ```
 
-6. **Run Turtlebot4 Simulation:**
+6. **Prepare for Turtlebot4 Simulation:**
    If turtlebot4 simulator is not installed already, run
    ```bash
    sudo apt update
    sudo apt install ros-[your_version]-turtlebot4-simulator
+   ```
+   If CycloneDDS is not installed, run
+   ```bash
+   sudo apt install -y ros-[your_version]-rmw-cyclonedds-cpp
    ```
    **Launch Gazebo Simulation:**
    ```bash
@@ -230,6 +234,46 @@ The Axum core runs both REST and WebSockets on port `8080`:
    ```bash
    uv run --with eclipse-zenoh test/monitor_state.py
    ```
+   **(Useful) Clearn up the dead process**
+   ```bash
+   # 1. Stop any lingering background nodes
+   pkill -9 -f ros2
+   pkill -9 -f gz
+
+   # 2. Clear FastDDS shared memory lock files
+   rm -rf /dev/shm/fastrtps_*
+   ```
+
+7. **Run the adaptor for Robot 1**
+   ```bash
+   ros2 run issem_ros2_bridge bridge_node --ros-args   -p agv_id:=amr_01   -p manufacturer:=ISSEM   -p use_sim_time:=true   -r __ns:=/robot1
+   ```
+   **Run the adaptor for Robot 2**
+   ```bash
+   ros2 run issem_ros2_bridge bridge_node --ros-args   -p agv_id:=amr_02   -p manufacturer:=ISSEM   -p use_sim_time:=true   -r __ns:=/robot2
+   ```
+   **Dispatch an order for Robot 1**
+   ```bash
+   curl -X POST http://localhost:3000/api/v1/robots/amr_01/orders   -H "Content-Type: application/json"   -d '{
+    "robot_id": "amr_01",
+    "manufacturer": "ISSEM",
+    "start_node": "ChargingStation",
+    "target_node": "WayPoint_A",
+    "lock_ttl_secs": 60
+   }'
+   ```
+   **Dispatch an order for Robot 2**
+   ```bash
+   curl -X POST http://localhost:3000/api/v1/robots/amr_02/orders   -H "Content-Type: application/json"   -d '{
+    "robot_id": "amr_02",
+    "manufacturer": "ISSEM",
+    "start_node": "WayPoint_A",
+    "target_node": "PickZone_1",
+    "lock_ttl_secs": 60
+   }'
+   ```
+
+
 ---
 
 ## 🗺️ Development Roadmap
