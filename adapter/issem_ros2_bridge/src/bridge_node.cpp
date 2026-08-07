@@ -264,10 +264,10 @@ void BridgeNode::publish_telemetry() {
     }
 
     if (!tf_found) {
-        RCLCPP_WARN_THROTTLED(
+        RCLCPP_WARN_THROTTLE(
             this->get_logger(),
             *this->get_clock(),
-            5000,
+            5000, // Duration in milliseconds
             "Could not lookup transform map -> base_link/footprint for namespace '%s'",
             ns.c_str()
         );

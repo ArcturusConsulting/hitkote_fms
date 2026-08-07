@@ -212,7 +212,7 @@ The Axum core runs both REST and WebSockets on port `8080`:
    ros2 run issem_ros2_bridge bridge_node --ros-args -p agv_id:=amr_01 -p use_sim_time:=true
    ```
 
-6. **Prepare for Turtlebot4 Simulation:**
+6. **Turtlebot4 Simulation:**
    If turtlebot4 simulator is not installed already, run
    ```bash
    sudo apt update
@@ -222,36 +222,56 @@ The Axum core runs both REST and WebSockets on port `8080`:
    ```bash
    sudo apt install -y ros-[your_version]-rmw-cyclonedds-cpp
    ```
-   **Launch Gazebo Simulation:**
+   Add this to .bashrc to use Nvidia GPU:
    ```bash
-   ros2 launch sim/launch.py
-   ```
-   **Send an order:**
-   ```bash
-   uv run --with eclipse-zenoh test/send_order.py
-   ```
-   **Monitor the telemetry:**
-   ```bash
-   uv run --with eclipse-zenoh test/monitor_state.py
-   ```
-   **(Useful) Clearn up the dead process**
-   ```bash
-   # 1. Stop any lingering background nodes
-   pkill -9 -f ros2
-   pkill -9 -f gz
-
-   # 2. Clear FastDDS shared memory lock files
-   rm -rf /dev/shm/fastrtps_*
+   export __NV_PRIME_RENDER_OFFLOAD=1
+   export __GLX_VENDOR_LIBRARY_NAME=nvidia
    ```
 
-7. **Run the adaptor for Robot 1**
+   **Terminal 1: Launch Gazebo Simulation with Robot 1:**
    ```bash
+   # 1. Force CycloneDDS and expand participant index range to 500
+   export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+   export CYCLONEDDS_URI='<CycloneDDS><Domain><Discovery><MaxAutoParticipantIndex>500</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
+
+   # 2. Source ROS 2 setup
+   source /opt/ros/jazzy/setup.bash
+
+   # 3. Launch your simulation file
+   ros2 launch sim/launch_one.py
+   ```
+
+   **Terminal 2: Spawn Robot 2**
+   ```bash
+   # 1. Force CycloneDDS and expand participant index range to 500
+   export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+   export CYCLONEDDS_URI='<CycloneDDS><Domain><Discovery><MaxAutoParticipantIndex>500</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
+
+   # 2. Source ROS 2 setup
+   source /opt/ros/jazzy/setup.bash
+
+   # 3. Launch your simulation file
+   ros2 launch sim/launch_two.py
+   ```
+
+   **Terminal 3: Run the adaptor for Robot 1**
+   ```bash
+   export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+   export CYCLONEDDS_URI='<CycloneDDS><Domain><Discovery><MaxAutoParticipantIndex>500</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
+   source /opt/ros/jazzy/setup.bash
+   source install/local_setup.bash
    ros2 run issem_ros2_bridge bridge_node --ros-args   -p agv_id:=amr_01   -p manufacturer:=ISSEM   -p use_sim_time:=true   -r __ns:=/robot1
    ```
-   **Run the adaptor for Robot 2**
+
+   **Terminal 4: Run the adaptor for Robot 2**
    ```bash
+   export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+   export CYCLONEDDS_URI='<CycloneDDS><Domain><Discovery><MaxAutoParticipantIndex>500</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
+   source /opt/ros/jazzy/setup.bash
+   source install/local_setup.bash
    ros2 run issem_ros2_bridge bridge_node --ros-args   -p agv_id:=amr_02   -p manufacturer:=ISSEM   -p use_sim_time:=true   -r __ns:=/robot2
    ```
+
    **Dispatch an order for Robot 1**
    ```bash
    curl -X POST http://localhost:3000/api/v1/robots/amr_01/orders   -H "Content-Type: application/json"   -d '{
@@ -273,20 +293,15 @@ The Axum core runs both REST and WebSockets on port `8080`:
    }'
    ```
 
+   **(Useful) Clearn up the dead process**
+   ```bash
+   # 1. Stop any lingering background nodes
+   pkill -9 -f ros2
+   pkill -9 -f gz
 
----
-
-## 🗺️ Development Roadmap
-
-- [x] Architecture design & VDA 5050 v3.0.0 schema definitions
-- [x] Docker Compose environment setup (Redis 7 + Core Container)
-- [x] Redis Durable State & Leased Spatial Lock Schema design
-- [x] **Phase 1:** Core Zenoh router setup & C++ ROS 2 Nav2 bridge implementation
-- [x] **Phase 2:** Redis integration in `fleet.rs` (`redis-rs` async client)
-- [x] **Phase 3:** Topological graph routing engine (`petgraph` + A* search)
-- [x] **Phase 4:** Node & Zone reservation manager with atomic Lua scripts
-- [x] **Phase 5:** Axum REST & WebSocket API layer with 2D Canvas web dashboard
-- [ ] **Phase 6:** Multi-robot Gazebo simulation integration test suite
+   # 2. Clear FastDDS shared memory lock files
+   rm -rf /dev/shm/fastrtps_*
+   ```
 
 ---
 
