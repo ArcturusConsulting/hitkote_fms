@@ -95,32 +95,32 @@ HITKOTE FMS provides a **local-first, open-source orchestration core** that brid
 
 ```text
 hitkote_fms/
-├── README.md                  # System overview & technical documentation
-├── docker-compose.yml         # Container orchestrator (Redis 7 + HITKOTE Core)
-├── .gitignore                 # Root gitignore (Cargo, colcon, CMake, Docker)
+├── README.md                   # System overview & technical documentation
+├── docker-compose.yml          # Container orchestrator (Redis 7 + HITKOTE Core)
+├── .gitignore                  # Root gitignore (Cargo, colcon, CMake, Docker)
 │
-├── core/                      # FMS SERVER ENGINE (Rust)
-│   ├── Dockerfile             # Multi-stage Rust build container
+├── core/                       # FMS SERVER ENGINE (Rust)
+│   ├── Dockerfile              # Multi-stage Rust build container
 │   ├── Cargo.toml
 │   └── src/
-│       ├── main.rs            # Entry point & Zenoh session setup
-│       ├── api/               # Axum REST endpoints & WebSocket handler
-│       ├── fleet/             # Fleet manager & Redis persistence layer
-│       ├── router/            # Topological graph routing & zone reservation logic
-│       └── vda5050/           # Rust serde structs for VDA 5050 v3.0.0
+│       main.rs                 # Entry point & Zenoh session setup
+│       api.rs                  # Axum REST endpoints & WebSocket handler
+│       fleet.rs                # Fleet manager & Redis persistence layer
+│       router.rs               # Topological graph routing & zone reservation logic
+│       vda5050.rs              # Rust serde structs for VDA 5050 v3.0.0
 │
-├── adapter/                   # EDGE ROBOT BRIDGES
-│   └── hitkote_ros2_bridge/     # C++ ROS 2 package
+├── adapter/                    # EDGE ROBOT BRIDGES
+│   └── hitkote_ros2_bridge/    # C++ ROS 2 package
 │       ├── CMakeLists.txt
 │       ├── package.xml
 │       └── src/
 │           └── bridge_node.cpp # Zenoh subscriber <-> Nav2 Action Client bridge
 │
-├── common/                    # SHARED DATA SPECIFICATIONS
-│   └── schemas/               # VDA 5050 v3.0.0 JSON schema validation definitions
+├── common/                     # SHARED DATA SPECIFICATIONS
+│   └── schemas/                # VDA 5050 v3.0.0 JSON schema validation definitions
 │
-└── sim/                       # SIMULATION & DEMOS
-    └── launch/                # Gazebo environment & multi-robot test launches
+└── sim/                        # SIMULATION & DEMOS
+    └── launch/                 # Gazebo environment & multi-robot test launches
 ```
 
 ---
@@ -143,7 +143,7 @@ HITKOTE FMS structures state in Redis using a structured key hierarchy:
 
 HITKOTE FMS organizes network traffic using Zenoh's hierarchical key-expressions:
 
-$$\text{Key Scheme: } \texttt{hitkote/v3/\{manufacturer\}/\{serialNumber\}/\{interface\}}}$$
+$$\text{Key Scheme: } \text{hitkote/v3/\{manufacturer\}/\{serialNumber\}/\{interface\}}$$
 
 * **`hitkote/v3/{mfr}/{sn}/order`** *(FMS $\rightarrow$ Robot)*: Assigns topological route nodes, edges, and actions.
 * **`hitkote/v3/{mfr}/{sn}/instantActions`** *(FMS $\rightarrow$ Robot)*: Sends high-priority overrides (`pause`, `resume`, `cancelOrder`, `StartHibernation`).
