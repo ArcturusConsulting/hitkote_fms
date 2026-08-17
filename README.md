@@ -35,13 +35,13 @@ HITKOTE FMS provides a **local-first, open-source orchestration core** that brid
 |  (WES / Fleet Supervisor)        |   |    (Browser Client)              |
 +----------------------------------+   +----------------------------------+
                  |                                  |           ^
-                 | HTTP POST /tasks                 | HTTP GET  | WebSocket
+                 |                                  | HTTP GET  | WebSocket
                  | HTTP POST /orders                | static    | /api/v1/ws
                  +-----------------+----------------+           | (Live Telemetry)
                                    |                            |
                                    v                            |
 +---------------------------------------------------------------+-------+
-|                         HITKOTE FMS CORE (Rust)                         |
+|                         HITKOTE FMS CORE (Rust)                       |
 |  - Axum Web Server (REST API, WebSocket Hub, Static File Host @ 8080) |
 |  - Tokio Broadcast Engine (`broadcast::channel` Telemetry Fan-out)    |
 |  - Petgraph Topological Router (A* / Dijkstra Pathfinding)            |
@@ -52,25 +52,25 @@ HITKOTE FMS provides a **local-first, open-source orchestration core** that brid
                 +------------------+------------------+
                 |                                     |
                 v                                     v
-+----------------------------------+ +----------------------------------+
-|  REDIS 7 STATE STORE & LOCKS     | |  ZENOH BUS (UDP / Multicast)     |
-|  - `hitkote:robot:*` Telemetry     | |  Pattern: `hitkote/v3/{mfr}/{sn}/` |
-|  - `hitkote:traffic:*` Leased Locks| |  Payload: VDA 5050 v3.0.0 JSON   |
-|  - `hitkote:order:*` Active State  | +----------------------------------+
-+----------------------------------+                  |
++-------------------------------------+  +------------------------------------+
+|  REDIS 7 STATE STORE & LOCKS        |  |  ZENOH BUS (UDP / Multicast)       |
+|  - `hitkote:robot:*` Telemetry      |  |  Pattern: `hitkote/v3/{mfr}/{sn}/` |
+|  - `hitkote:traffic:*` Leased Locks |  |  Payload: VDA 5050 v3.0.0 JSON     |
+|  - `hitkote:order:*` Active State   |  +------------------------------------+
++-------------------------------------+               |
                                    +------------------+------------------+
                                    |                                     |
-                                   v                                     v
-                  +---------------------------------+   +---------------------------------+
-                  |   HITKOTE ROS 2 BRIDGE (C++ Node) |   |     Non-ROS 2 Legacy AGV Bridge |
-                  |   - rclcpp & zenoh-cpp          |   |     - PLC / Modbus / Serial     |
-                  |   - Nav2 Action Client          |   |     - VDA 5050 Translator       |
-                  +---------------------------------+   +---------------------------------+
+                                   v ROS2 Robot                          v Non-ROS2 Robot
+                  +----------------------------------+  +-------------------------------+
+                  |  HITKOTE ROS 2 BRIDGE (ROS2 Node)|  |  Non-ROS 2 Legacy AGV Bridge  |
+                  |  - rclcpp & zenoh-cpp            |  |     - PLC / Modbus / Serial   |
+                  |  - Nav2 Action Client            |  |     - VDA 5050 Translator     |
+                  +----------------------------------+  +-------------------------------+
                                    |                                     |
                                    v Local ROS 2 IPC                     v Serial / Fieldbus
-                  +---------------------------------+   +---------------------------------+
-                  |   Modern ROS 2 AMR (Nav2 / SLAM)|   |     Legacy Industrial AGV       |
-                  +---------------------------------+   +---------------------------------+
+                  +----------------------------------+  +-------------------------------+
+                  |  Modern ROS 2 AMR (Nav2 / SLAM)  |  |     Legacy Industrial AGV     |
+                  +----------------------------------+  +-------------------------------+
                  
 ```
 
