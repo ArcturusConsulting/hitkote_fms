@@ -17,7 +17,7 @@ Traditional intralogistics relies heavily on proprietary Systems Integrator (SI)
 
 ## 🚀 The HITKOTE Solution
 
-HITKOTE FMS provides a **local-first, open-source orchestration core** that bridges high-level enterprise logistics with low-level robot execution:
+HITKOTE FMS provides a **open-source orchestration core** that bridges high-level enterprise logistics with low-level robot execution:
 
 1. **VDA 5050 v3.0.0 Native:** Adopts the latest international standard interface for AMRs/AGVs, supporting free navigation, zone-based traffic rules, retriable actions, and path sharing.
 2. **Zenoh Transport Layer:** Replaces standard TCP/MQTT with Zenoh (UDP/multicast). Eliminates Wi-Fi drop-out stalls, operates with micro-byte headers, and scales peer-to-peer across warehouse subnets.
