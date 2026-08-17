@@ -173,7 +173,7 @@ The Axum core runs both REST and WebSockets on port `8080`:
 ### Prerequisites
 * Rust (1.80+)
 * Docker & Docker Compose
-* ROS 2 (Humble or Jazzy)
+* ROS 2 (Tested with Jazzy)
 * C++17 Compiler & CMake
 
 ### Running locally via Docker Compose
@@ -239,7 +239,7 @@ The Axum core runs both REST and WebSockets on port `8080`:
    export CYCLONEDDS_URI='<CycloneDDS><Domain><Discovery><MaxAutoParticipantIndex>500</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
 
    # 2. Source ROS 2 setup
-   source /opt/ros/jazzy/setup.bash
+   source /opt/ros/[your_version]/setup.bash
 
    # 3. Launch your simulation file
    ros2 launch sim/launch_one.py
@@ -252,7 +252,7 @@ The Axum core runs both REST and WebSockets on port `8080`:
    export CYCLONEDDS_URI='<CycloneDDS><Domain><Discovery><MaxAutoParticipantIndex>500</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
 
    # 2. Source ROS 2 setup
-   source /opt/ros/jazzy/setup.bash
+   source /opt/ros/[your_version]/setup.bash
 
    # 3. Launch your simulation file
    ros2 launch sim/launch_two.py
@@ -262,7 +262,7 @@ The Axum core runs both REST and WebSockets on port `8080`:
    ```bash
    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
    export CYCLONEDDS_URI='<CycloneDDS><Domain><Discovery><MaxAutoParticipantIndex>500</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
-   source /opt/ros/jazzy/setup.bash
+   source /opt/ros/[your_version]/setup.bash
    source install/local_setup.bash
    ros2 run hitkote_ros2_bridge bridge_node --ros-args   -p agv_id:=amr_01   -p manufacturer:=HITKOTE   -p use_sim_time:=true   -r __ns:=/robot1
    ```
@@ -271,7 +271,7 @@ The Axum core runs both REST and WebSockets on port `8080`:
    ```bash
    export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
    export CYCLONEDDS_URI='<CycloneDDS><Domain><Discovery><MaxAutoParticipantIndex>500</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
-   source /opt/ros/jazzy/setup.bash
+   source /opt/ros/[your_version]/setup.bash
    source install/local_setup.bash
    ros2 run hitkote_ros2_bridge bridge_node --ros-args   -p agv_id:=amr_02   -p manufacturer:=HITKOTE   -p use_sim_time:=true   -r __ns:=/robot2
    ```
@@ -308,7 +308,3 @@ The Axum core runs both REST and WebSockets on port `8080`:
    ```
 
 ---
-
-## 📄 License
-
-Distributed under the Apache 2.0 License. See `LICENSE` for details.
