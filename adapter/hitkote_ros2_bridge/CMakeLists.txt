@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(issem_ros2_bridge)
+project(hitkote_ros2_bridge)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -69,7 +69,7 @@ ament_target_dependencies(bridge_node_component
 )
 
 # Register as ROS 2 Component Container plugin
-rclcpp_components_register_nodes(bridge_node_component "issem::BridgeNode")
+rclcpp_components_register_nodes(bridge_node_component "hitkote::BridgeNode")
 
 # 4. Standalone Executable Node
 add_executable(bridge_node src/bridge_node_main.cpp)

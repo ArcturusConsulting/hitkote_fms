@@ -5,19 +5,19 @@ use tower_http::services::ServeDir;
 use tracing::{error, info, warn};
 use zenoh::config::Config;
 
-use issem_core::api::{self, AppState};
-use issem_core::config::AppConfig;
-use issem_core::fleet::FleetManager;
-use issem_core::router::TopologicalRouter;
-use issem_core::vda5050::State as VdaState;
-use issem_core::ws::ws_handler;
+use hitkote_core::api::{self, AppState};
+use hitkote_core::config::AppConfig;
+use hitkote_core::fleet::FleetManager;
+use hitkote_core::router::TopologicalRouter;
+use hitkote_core::vda5050::State as VdaState;
+use hitkote_core::ws::ws_handler;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Returns nothing if everything succeeds; catch and return any type of error if something fails
 
     // 0. Initialize structured logging
     tracing_subscriber::fmt::init();
-    info!("Starting ISSEM FMS Core Engine...");
+    info!("Starting HITKOTE FMS Core Engine...");
 
     // 1. Load centralized configuration from config/default.json or env vars
     let config = AppConfig::load()?;
@@ -96,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Ret
     
     // 7. Spawn Telemetry Listener Background Task
     tokio::spawn(async move {
-        info!("ISSEM FMS Core active. Telemetry listener thread started.");
+        info!("HITKOTE FMS Core active. Telemetry listener thread started.");
 
         // Pauses until Zenoh receives a message
         while let Ok(sample) = subscriber.recv_async().await {
@@ -160,7 +160,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> { // Ret
 
     // 10. Start the Axum HTTP server and listen for incoming requests
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server.port));
-    info!("ISSEM Core API server listening on http://{addr}");
+    info!("HITKOTE Core API server listening on http://{addr}");
 
     // 11. Binds the Axum server to the specified address and port, and starts serving requests
     let listener = tokio::net::TcpListener::bind(addr).await?;

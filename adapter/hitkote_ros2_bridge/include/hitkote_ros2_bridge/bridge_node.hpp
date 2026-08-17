@@ -1,5 +1,5 @@
-#ifndef ISSEM_ROS2_BRIDGE__BRIDGE_NODE_HPP_
-#define ISSEM_ROS2_BRIDGE__BRIDGE_NODE_HPP_
+#ifndef HITKOTE_ROS2_BRIDGE__BRIDGE_NODE_HPP_
+#define HITKOTE_ROS2_BRIDGE__BRIDGE_NODE_HPP_
 
 #include <memory>
 #include <string>
@@ -13,9 +13,9 @@
 
 #include <zenoh.h>
 
-namespace issem {
+namespace hitkote {
 
-/// @brief Bridge node interfacing ISSEM Core FMS (Zenoh/VDA 5050) with the local AMR ROS 2 stack (Nav2/TF2).
+/// @brief Bridge node interfacing HITKOTE Core FMS (Zenoh/VDA 5050) with the local AMR ROS 2 stack (Nav2/TF2).
 class BridgeNode : public rclcpp::Node {
 public:
     using NavigateToPose = nav2_msgs::action::NavigateToPose;
@@ -108,6 +108,6 @@ private:
     uint32_t header_id_{0};
 };
 
-}  // namespace issem
+}  // namespace hitkote
 
-#endif  // ISSEM_ROS2_BRIDGE__BRIDGE_NODE_HPP_
+#endif  // HITKOTE_ROS2_BRIDGE__BRIDGE_NODE_HPP_

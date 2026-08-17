@@ -46,7 +46,7 @@ impl AppConfig {
             AppConfig {
                 server: ServerConfig { host: "0.0.0.0".into(), port: 3000 },
                 redis: RedisConfig { url: "redis://127.0.0.1:6379".into() },
-                zenoh: ZenohConfig { listen_endpoint: "tcp/127.0.0.1:7447".into(), state_topic_pattern: "issem/v3/*/*/state".into() },
+                zenoh: ZenohConfig { listen_endpoint: "tcp/127.0.0.1:7447".into(), state_topic_pattern: "hitkote/v3/*/*/state".into() },
                 paths: PathsConfig {
                     assets_dir: "static/assets".into(),
                     graph_file: "static/assets/graph.json".into(),

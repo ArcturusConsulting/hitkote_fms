@@ -8,7 +8,7 @@
   },
   "zenoh": {
     "listen_endpoint": "tcp/127.0.0.1:7447",
-    "state_topic_pattern": "issem/v3/*/*/state"
+    "state_topic_pattern": "hitkote/v3/*/*/state"
   },
   "paths": {
     "assets_dir": "static/assets",

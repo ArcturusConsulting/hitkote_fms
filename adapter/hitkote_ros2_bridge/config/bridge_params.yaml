@@ -1,4 +1,4 @@
-issem_ros2_bridge:
+hitkote_ros2_bridge:
   ros__parameters:
     agv_id: "AMR-01"
     manufacturer: "Mir"

@@ -4,7 +4,7 @@ services:
   # --- Redis State Store ---
   redis:
     image: redis:7-alpine
-    container_name: issem-redis
+    container_name: hitkote-redis
     command: redis-server --appendonly yes --appendfsync everysec
     ports:
       - "6379:6379"
@@ -17,12 +17,12 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # --- ISSEM FMS Core Service ---
-  issem-core:
+  # --- HITKOTE FMS Core Service ---
+  hitkote-core:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: issem-core
+    container_name: hitkote-core
     environment:
       - REDIS_URL=redis://redis:6379
       - RUST_LOG=debug

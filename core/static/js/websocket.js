@@ -5,7 +5,7 @@ export function connectWebSocket({ onOpen, onClose, onMessage }) {
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-        console.log("⚡ Connected to ISSEM WebSocket stream");
+        console.log("⚡ Connected to HITKOTE WebSocket stream");
         if (onOpen) onOpen();
     };
 

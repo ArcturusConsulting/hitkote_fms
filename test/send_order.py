@@ -12,7 +12,7 @@ def build_vda5050_order(agv_id: str, order_id: str) -> dict:
         "headerId": 1,
         "timestamp": timestamp,
         "version": "3.0.0",
-        "manufacturer": "ISSEM",
+        "manufacturer": "HITKOTE",
         "serialNumber": agv_id,
         "orderId": order_id,
         "orderUpdateId": 0,
@@ -39,7 +39,7 @@ def main():
     parser.add_argument("--order-id", default="order_001", help="Unique order identifier")
     args = parser.parse_args()
 
-    key_expr = f"vda5050/v3/issem/{args.agv_id}/order"
+    key_expr = f"vda5050/v3/hitkote/{args.agv_id}/order"
     order_payload = build_vda5050_order(args.agv_id, args.order_id)
 
     print(f"Opening Zenoh session...", flush=True)

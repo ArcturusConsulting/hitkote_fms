@@ -1,4 +1,4 @@
-#include "issem_ros2_bridge/bridge_node.hpp"
+#include "hitkote_ros2_bridge/bridge_node.hpp"
 
 #include <cmath>
 #include <nlohmann/json.hpp>
@@ -6,10 +6,10 @@
 
 using json = nlohmann::json;
 
-namespace issem {
+namespace hitkote {
 
 BridgeNode::BridgeNode(const rclcpp::NodeOptions & options)
-: Node("issem_ros2_bridge", options) {
+: Node("hitkote_ros2_bridge", options) {
     // Declare parameters from bridge_params.yaml
     this->declare_parameter<std::string>("agv_id", "AMR-01");
     this->declare_parameter<std::string>("manufacturer", "Mir");
@@ -29,7 +29,7 @@ BridgeNode::BridgeNode(const rclcpp::NodeOptions & options)
         std::chrono::milliseconds(200),
         std::bind(&BridgeNode::publish_telemetry, this));
 
-    RCLCPP_INFO(this->get_logger(), "ISSEM ROS2 Bridge initialized for AGV: %s", agv_id_.c_str());
+    RCLCPP_INFO(this->get_logger(), "HITKOTE ROS2 Bridge initialized for AGV: %s", agv_id_.c_str());
 }
 
 BridgeNode::~BridgeNode() {
@@ -54,11 +54,11 @@ void BridgeNode::init_zenoh() {
     // Fetch parameters dynamically for topic construction
     std::string manufacturer = this->get_parameter("manufacturer").as_string();
 
-    // Must match the exact topic structure the ISSEM Core expects
+    // Must match the exact topic structure the HITKOTE Core expects
     std::string order_topic = "uagv/v2/" + manufacturer + "/" + agv_id_ + "/order";
     std::string action_topic = "uagv/v2/" + manufacturer + "/" + agv_id_ + "/instantActions";
-    std::string state_topic = "issem/v3/" + manufacturer + "/" + agv_id_ + "/state";
-    std::string vis_topic = "issem/v3/" + manufacturer + "/" + agv_id_ + "/visualization";
+    std::string state_topic = "hitkote/v3/" + manufacturer + "/" + agv_id_ + "/state";
+    std::string vis_topic = "hitkote/v3/" + manufacturer + "/" + agv_id_ + "/visualization";
 
     // Setup Subscribers: z_declare_subscriber(session_loan, &sub_handle, keyexpr_loan, closure_move, options)
     z_owned_closure_sample_t order_closure;
@@ -344,7 +344,7 @@ std::string BridgeNode::get_iso_utc_timestamp() {
     return oss.str();
 }
 
-}  // namespace issem
+}  // namespace hitkote
 
 #include "rclcpp_components/register_node_macro.hpp"
-RCLCPP_COMPONENTS_REGISTER_NODE(issem::BridgeNode)
+RCLCPP_COMPONENTS_REGISTER_NODE(hitkote::BridgeNode)

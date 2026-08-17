@@ -1,5 +1,5 @@
 [package]
-name = "issem-core"
+name = "hitkote-core"
 version = "0.1.0"
 edition = "2021"
 
@@ -20,7 +20,7 @@ uuid = "1.24.0"
 thiserror = "1.0"
 
 [[bin]]
-name = "issem-core"
+name = "hitkote-core"
 path = "src/main.rs"
 
 [[bin]]

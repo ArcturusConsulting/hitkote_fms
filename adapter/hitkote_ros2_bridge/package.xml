@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>issem_ros2_bridge</name>
+  <name>hitkote_ros2_bridge</name>
   <version>0.1.0</version>
-  <description>ROS 2 / Nav2 Adapter Bridge for ISSEM FMS Core</description>
+  <description>ROS 2 / Nav2 Adapter Bridge for HITKOTE FMS Core</description>
   <maintainer email="info@arcturus.consulting">Norrie</maintainer>
   <license>Apache-2.0</license>
 

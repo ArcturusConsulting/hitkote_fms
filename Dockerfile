@@ -11,7 +11,7 @@ COPY core/Cargo.toml core/Cargo.lock* ./
 COPY core/src ./src
 
 # Build production release binary
-RUN cargo build --release --bin issem-core
+RUN cargo build --release --bin hitkote-core
 # --- Runtime Stage ---
 FROM debian:bookworm-slim
 
@@ -21,8 +21,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
 
 # Copy compiled binary from build stage
-COPY --from=builder /app/target/release/issem-core /app/issem-core
+COPY --from=builder /app/target/release/hitkote-core /app/hitkote-core
 ENV RUST_LOG=info
 ENV REDIS_URL=redis://redis:6379
 
-CMD ["/app/issem-core"]
+CMD ["/app/hitkote-core"]

@@ -1,6 +1,6 @@
-![ISSEM Logo](ISSEM.png)
+![HITKOTE Logo](HITKOTE.png)
 
-# ISSEM FMS (Interoperable Semantic Synchronization Ensemble Middleware - Fleet Management System)
+# HITKOTE FMS (Interoperable Semantic Synchronization Ensemble Middleware - Fleet Management System)
 
 An open-source, vendor-agnostic Fleet Management System (FMS) built on **Eclipse Zenoh** and **VDA 5050 v3.0.0**. Designed to orchestrate heterogeneous fleets of Autonomous Mobile Robots (AMRs) and Automated Guided Vehicles (AGVs) in high-density warehouse and manufacturing environments.
 
@@ -15,9 +15,9 @@ Traditional intralogistics relies heavily on proprietary Systems Integrator (SI)
 
 ---
 
-## 🚀 The ISSEM Solution
+## 🚀 The HITKOTE Solution
 
-ISSEM FMS provides a **local-first, open-source orchestration core** that bridges high-level enterprise logistics with low-level robot execution:
+HITKOTE FMS provides a **local-first, open-source orchestration core** that bridges high-level enterprise logistics with low-level robot execution:
 
 1. **VDA 5050 v3.0.0 Native:** Adopts the latest international standard interface for AMRs/AGVs, supporting free navigation, zone-based traffic rules, retriable actions, and path sharing.
 2. **Zenoh Transport Layer:** Replaces standard TCP/MQTT with Zenoh (UDP/multicast). Eliminates Wi-Fi drop-out stalls, operates with micro-byte headers, and scales peer-to-peer across warehouse subnets.
@@ -41,7 +41,7 @@ ISSEM FMS provides a **local-first, open-source orchestration core** that bridge
                                    |                            |
                                    v                            |
 +---------------------------------------------------------------+-------+
-|                         ISSEM FMS CORE (Rust)                         |
+|                         HITKOTE FMS CORE (Rust)                         |
 |  - Axum Web Server (REST API, WebSocket Hub, Static File Host @ 8080) |
 |  - Tokio Broadcast Engine (`broadcast::channel` Telemetry Fan-out)    |
 |  - Petgraph Topological Router (A* / Dijkstra Pathfinding)            |
@@ -54,15 +54,15 @@ ISSEM FMS provides a **local-first, open-source orchestration core** that bridge
                 v                                     v
 +----------------------------------+ +----------------------------------+
 |  REDIS 7 STATE STORE & LOCKS     | |  ZENOH BUS (UDP / Multicast)     |
-|  - `issem:robot:*` Telemetry     | |  Pattern: `issem/v3/{mfr}/{sn}/` |
-|  - `issem:traffic:*` Leased Locks| |  Payload: VDA 5050 v3.0.0 JSON   |
-|  - `issem:order:*` Active State  | +----------------------------------+
+|  - `hitkote:robot:*` Telemetry     | |  Pattern: `hitkote/v3/{mfr}/{sn}/` |
+|  - `hitkote:traffic:*` Leased Locks| |  Payload: VDA 5050 v3.0.0 JSON   |
+|  - `hitkote:order:*` Active State  | +----------------------------------+
 +----------------------------------+                  |
                                    +------------------+------------------+
                                    |                                     |
                                    v                                     v
                   +---------------------------------+   +---------------------------------+
-                  |   ISSEM ROS 2 BRIDGE (C++ Node) |   |     Non-ROS 2 Legacy AGV Bridge |
+                  |   HITKOTE ROS 2 BRIDGE (C++ Node) |   |     Non-ROS 2 Legacy AGV Bridge |
                   |   - rclcpp & zenoh-cpp          |   |     - PLC / Modbus / Serial     |
                   |   - Nav2 Action Client          |   |     - VDA 5050 Translator       |
                   +---------------------------------+   +---------------------------------+
@@ -94,9 +94,9 @@ ISSEM FMS provides a **local-first, open-source orchestration core** that bridge
 ## 📁 Repository Directory Layout
 
 ```text
-issem_fms/
+hitkote_fms/
 ├── README.md                  # System overview & technical documentation
-├── docker-compose.yml         # Container orchestrator (Redis 7 + ISSEM Core)
+├── docker-compose.yml         # Container orchestrator (Redis 7 + HITKOTE Core)
 ├── .gitignore                 # Root gitignore (Cargo, colcon, CMake, Docker)
 │
 ├── core/                      # FMS SERVER ENGINE (Rust)
@@ -110,7 +110,7 @@ issem_fms/
 │       └── vda5050/           # Rust serde structs for VDA 5050 v3.0.0
 │
 ├── adapter/                   # EDGE ROBOT BRIDGES
-│   └── issem_ros2_bridge/     # C++ ROS 2 package
+│   └── hitkote_ros2_bridge/     # C++ ROS 2 package
 │       ├── CMakeLists.txt
 │       ├── package.xml
 │       └── src/
@@ -127,29 +127,29 @@ issem_fms/
 
 ## 🔒 Durable State & Traffic Lock Schema (Redis)
 
-ISSEM FMS structures state in Redis using a structured key hierarchy:
+HITKOTE FMS structures state in Redis using a structured key hierarchy:
 
 | Key Pattern | Type | Purpose | Policy |
 |---|---|---|---|
-| `issem:robot:{mfr}:{sn}:state` | JSON | Latest VDA 5050 telemetry snapshot | Persisted (AOF) |
-| `issem:robot:{mfr}:{sn}:heartbeat` | String | Liveness check | Expires in 5 seconds (`EX 5`) |
-| `issem:order:{order_id}` | JSON | Active order progress & route nodes | Persisted until completion |
-| `issem:traffic:node:{node_id}` | String | Exclusive topological node lease | Expires in 3,000 ms (`NX PX 3000`) |
-| `issem:traffic:edge:{edge_id}` | String | Directional path segment lease | Expires in 3,000 ms (`NX PX 3000`) |
+| `hitkote:robot:{mfr}:{sn}:state` | JSON | Latest VDA 5050 telemetry snapshot | Persisted (AOF) |
+| `hitkote:robot:{mfr}:{sn}:heartbeat` | String | Liveness check | Expires in 5 seconds (`EX 5`) |
+| `hitkote:order:{order_id}` | JSON | Active order progress & route nodes | Persisted until completion |
+| `hitkote:traffic:node:{node_id}` | String | Exclusive topological node lease | Expires in 3,000 ms (`NX PX 3000`) |
+| `hitkote:traffic:edge:{edge_id}` | String | Directional path segment lease | Expires in 3,000 ms (`NX PX 3000`) |
 
 ---
 
 ## 📡 Zenoh Key-Expression Scheme (VDA 5050 v3.0.0)
 
-ISSEM FMS organizes network traffic using Zenoh's hierarchical key-expressions:
+HITKOTE FMS organizes network traffic using Zenoh's hierarchical key-expressions:
 
-$$\text{Key Scheme: } \texttt{issem/v3/\{manufacturer\}/\{serialNumber\}/\{interface\}}}$$
+$$\text{Key Scheme: } \texttt{hitkote/v3/\{manufacturer\}/\{serialNumber\}/\{interface\}}}$$
 
-* **`issem/v3/{mfr}/{sn}/order`** *(FMS $\rightarrow$ Robot)*: Assigns topological route nodes, edges, and actions.
-* **`issem/v3/{mfr}/{sn}/instantActions`** *(FMS $\rightarrow$ Robot)*: Sends high-priority overrides (`pause`, `resume`, `cancelOrder`, `StartHibernation`).
-* **`issem/v3/{mfr}/{sn}/state`** *(Robot $\rightarrow$ FMS)*: Periodic/event-driven state updates (last node reached, battery, errors, operating mode).
-* **`issem/v3/{mfr}/{sn}/visualization`** *(Robot $\rightarrow$ FMS)*: High-frequency $(x, y, \theta)$ position streaming for 2D UI rendering.
-* **`issem/v3/{mfr}/{sn}/factsheet`** *(Robot $\rightarrow$ FMS)*: Static vehicle capability metadata published upon registration.
+* **`hitkote/v3/{mfr}/{sn}/order`** *(FMS $\rightarrow$ Robot)*: Assigns topological route nodes, edges, and actions.
+* **`hitkote/v3/{mfr}/{sn}/instantActions`** *(FMS $\rightarrow$ Robot)*: Sends high-priority overrides (`pause`, `resume`, `cancelOrder`, `StartHibernation`).
+* **`hitkote/v3/{mfr}/{sn}/state`** *(Robot $\rightarrow$ FMS)*: Periodic/event-driven state updates (last node reached, battery, errors, operating mode).
+* **`hitkote/v3/{mfr}/{sn}/visualization`** *(Robot $\rightarrow$ FMS)*: High-frequency $(x, y, \theta)$ position streaming for 2D UI rendering.
+* **`hitkote/v3/{mfr}/{sn}/factsheet`** *(Robot $\rightarrow$ FMS)*: Static vehicle capability metadata published upon registration.
 
 ---
 
@@ -180,19 +180,23 @@ The Axum core runs both REST and WebSockets on port `8080`:
 
 1. **Clone the Repository:**
    ```bash
-   git clone [https://github.com/your-username/issem_fms.git](https://github.com/your-username/issem_fms.git)
-   cd issem_fms
+   git clone [https://github.com/your-username/hitkote_fms.git](https://github.com/your-username/hitkote_fms.git)
+   cd hitkote_fms
    ```
 
-2. **Launch Redis & ISSEM Core:**
+2. **Launch Redis & HITKOTE Core:**
    ```bash
+   # For Users
    docker compose up --build
+
+   # For Developers
+   RUST_LOG=info cargo run --bin hitkote-core
    ```
 
 3. **Verify Redis & Core Connectivity:**
    ```bash
    # Check Redis container health
-   docker exec -it issem-redis redis-cli ping
+   docker exec -it hitkote-redis redis-cli ping
    # Expected output: PONG
    ```
 
@@ -209,7 +213,7 @@ The Axum core runs both REST and WebSockets on port `8080`:
 
 5. **Test the ROS2 Adapter:**
    ```bash
-   ros2 run issem_ros2_bridge bridge_node --ros-args -p agv_id:=amr_01 -p use_sim_time:=true
+   ros2 run hitkote_ros2_bridge bridge_node --ros-args -p agv_id:=amr_01 -p use_sim_time:=true
    ```
 
 6. **Turtlebot4 Simulation:**
@@ -260,7 +264,7 @@ The Axum core runs both REST and WebSockets on port `8080`:
    export CYCLONEDDS_URI='<CycloneDDS><Domain><Discovery><MaxAutoParticipantIndex>500</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
    source /opt/ros/jazzy/setup.bash
    source install/local_setup.bash
-   ros2 run issem_ros2_bridge bridge_node --ros-args   -p agv_id:=amr_01   -p manufacturer:=ISSEM   -p use_sim_time:=true   -r __ns:=/robot1
+   ros2 run hitkote_ros2_bridge bridge_node --ros-args   -p agv_id:=amr_01   -p manufacturer:=HITKOTE   -p use_sim_time:=true   -r __ns:=/robot1
    ```
 
    **Terminal 4: Run the adaptor for Robot 2**
@@ -269,14 +273,14 @@ The Axum core runs both REST and WebSockets on port `8080`:
    export CYCLONEDDS_URI='<CycloneDDS><Domain><Discovery><MaxAutoParticipantIndex>500</MaxAutoParticipantIndex></Discovery></Domain></CycloneDDS>'
    source /opt/ros/jazzy/setup.bash
    source install/local_setup.bash
-   ros2 run issem_ros2_bridge bridge_node --ros-args   -p agv_id:=amr_02   -p manufacturer:=ISSEM   -p use_sim_time:=true   -r __ns:=/robot2
+   ros2 run hitkote_ros2_bridge bridge_node --ros-args   -p agv_id:=amr_02   -p manufacturer:=HITKOTE   -p use_sim_time:=true   -r __ns:=/robot2
    ```
 
    **Dispatch an order for Robot 1**
    ```bash
    curl -X POST http://localhost:3000/api/v1/robots/amr_01/orders   -H "Content-Type: application/json"   -d '{
     "robot_id": "amr_01",
-    "manufacturer": "ISSEM",
+    "manufacturer": "HITKOTE",
     "start_node": "ChargingStation",
     "target_node": "WayPoint_A",
     "lock_ttl_secs": 60
@@ -286,7 +290,7 @@ The Axum core runs both REST and WebSockets on port `8080`:
    ```bash
    curl -X POST http://localhost:3000/api/v1/robots/amr_02/orders   -H "Content-Type: application/json"   -d '{
     "robot_id": "amr_02",
-    "manufacturer": "ISSEM",
+    "manufacturer": "HITKOTE",
     "start_node": "WayPoint_A",
     "target_node": "PickZone_1",
     "lock_ttl_secs": 60

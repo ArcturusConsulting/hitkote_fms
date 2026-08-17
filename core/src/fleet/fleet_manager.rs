@@ -93,8 +93,8 @@ impl FleetManager {
         sn: &str, // Serial Number
         state: &VdaState,
     ) -> Result<(), FleetError> {
-        let state_key = format!("issem:robot:{mfr}:{sn}:state");
-        let heartbeat_key = format!("issem:robot:{mfr}:{sn}:heartbeat");
+        let state_key = format!("hitkote:robot:{mfr}:{sn}:state");
+        let heartbeat_key = format!("hitkote:robot:{mfr}:{sn}:heartbeat");
 
         // 1. Fetch previous state to detect node transitions
         if let Ok(Some(old_state)) = self.get_robot_state(mfr, sn).await {
@@ -139,7 +139,7 @@ impl FleetManager {
         mfr: &str,
         sn: &str,
     ) -> Result<Option<VdaState>, FleetError> {
-        let state_key = format!("issem:robot:{mfr}:{sn}:state");
+        let state_key = format!("hitkote:robot:{mfr}:{sn}:state");
         let mut conn = self.redis.clone();
 
         let raw_json: Option<String> = conn.get(&state_key).await?;
@@ -157,7 +157,7 @@ impl FleetManager {
         robot_id: &str,
         ttl_ms: u64,
     ) -> Result<bool, FleetError> {
-        let lock_key = format!("issem:traffic:node:{node_id}");
+        let lock_key = format!("hitkote:traffic:node:{node_id}");
         let mut conn = self.redis.clone();
 
         let result: Option<String> = redis::cmd("SET")
@@ -174,7 +174,7 @@ impl FleetManager {
 
     /// Releases a node lock if and only if it is still owned by the given robot.
     pub async fn release_node_lock(&self, node_id: &str, robot_id: &str) -> Result<bool, FleetError> {
-        let lock_key = format!("issem:traffic:node:{node_id}");
+        let lock_key = format!("hitkote:traffic:node:{node_id}");
         let mut conn = self.redis.clone();
 
         let script = redis::Script::new(
@@ -228,7 +228,7 @@ impl FleetManager {
 
         let keys: Vec<String> = nodes
             .iter()
-            .map(|node_id| format!("issem:traffic:node:{node_id}"))
+            .map(|node_id| format!("hitkote:traffic:node:{node_id}"))
             .collect();
 
         let mut conn = self.redis.clone();
@@ -267,7 +267,7 @@ impl FleetManager {
 
         let keys: Vec<String> = nodes
             .iter()
-            .map(|node_id| format!("issem:traffic:node:{node_id}"))
+            .map(|node_id| format!("hitkote:traffic:node:{node_id}"))
             .collect();
 
         let mut conn = self.redis.clone();

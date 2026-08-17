@@ -36,7 +36,7 @@ impl TaskAllocator {
 
         // 1. Fetch active state keys (targeting telemetry keys specifically)
         let keys: Vec<String> = redis
-            .keys("issem:robot:*:state") // Adjust to "issem:robot:*" if you don't use the :state suffix
+            .keys("hitkote:robot:*:state") // Adjust to "hitkote:robot:*" if you don't use the :state suffix
             .await
             .map_err(|e| format!("Redis scan error: {e}"))?;
 
