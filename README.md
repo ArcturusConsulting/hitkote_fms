@@ -180,7 +180,7 @@ The Axum core runs both REST and WebSockets on port `8080`:
 
 1. **Clone the Repository:**
    ```bash
-   git clone [https://github.com/your-username/hitkote_fms.git](https://github.com/your-username/hitkote_fms.git)
+   git clone https://github.com/ArcturusConsulting/hitkote_fms.git
    cd hitkote_fms
    ```
 
