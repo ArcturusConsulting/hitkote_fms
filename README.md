@@ -96,11 +96,11 @@ HITKOTE FMS provides a **local-first, open-source orchestration core** that brid
 ```text
 hitkote_fms/
 ├── README.md                   # System overview & technical documentation
+├── Dockerfile                  # Multi-stage Rust build container
 ├── docker-compose.yml          # Container orchestrator (Redis 7 + HITKOTE Core)
 ├── .gitignore                  # Root gitignore (Cargo, colcon, CMake, Docker)
 │
 ├── core/                       # FMS SERVER ENGINE (Rust)
-│   ├── Dockerfile              # Multi-stage Rust build container
 │   ├── Cargo.toml
 │   └── src/
 │       main.rs                 # Entry point & Zenoh session setup
